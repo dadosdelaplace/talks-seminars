@@ -4261,7 +4261,7 @@ Javier Álvarez Liébana
 :::
 
 ::: {style="color: #aab0c6; font-size: 0.65em; margin-top: 1.5em;"}
-Slides built with [Quarto](https://quarto.org) in R
+Slides built with [Quarto](https://quarto.org) in R and available in [https://javieralvarezliebana.es/talks-seminars](https://javieralvarezliebana.es/talks-seminars/20260408-labmeeting-northeastern/fda_intro_slides.html#/title-slide)
 
-*These slides were built using:* `fda` · `refund` · `fda.usc` · `fdapace` · `goffda` · `tidyfun` · `patchwork` · `tidyverse`
+*These slides were built using:* `fda` · `refund` · `fda.usc` · `fdapace` · `goffda` · `tidyfun` · `patchwork` · `tidyverse` · `claude.ai`
 :::
