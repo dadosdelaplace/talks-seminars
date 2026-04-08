@@ -1,0 +1,4267 @@
+---
+title: "THE SHAPE OF DATA"
+subtitle: "An introduction to Functional Data Analysis for biostatistics"
+author: "Javier Álvarez Liébana"
+institute: "Assistant Professor at Technical University of Madrid (Spain)"
+date: today
+format:
+  revealjs:
+    theme: simple
+    embed-resources: true
+    slide-number: true
+    chalkboard: false
+    transition: fade
+    background-transition: fade
+    code-fold: false
+    code-tools: false
+    fig-align: center
+    highlight-style: github
+    css: custom2.css
+    footer: "Introduction to FDA"
+    incremental: false
+    width: 1280
+    height: 720
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r setup}
+#| include: false
+library(fda)
+library(tidyverse)
+library(patchwork)
+library(viridis)
+library(plotly)
+
+# Global ggplot theme for slides
+theme_fda <- function() {
+  theme_minimal(base_size = 15) +
+    theme(
+      plot.title    = element_text(face = "bold", size = 17),
+      plot.subtitle = element_text(color = "grey40", size = 13),
+      axis.title    = element_text(size = 13),
+      panel.grid.minor = element_blank(),
+      legend.position  = "bottom"
+    )
+}
+```
+
+
+## About me
+
+::: {.columns}
+::: {.column width="65%"}
+
+::: {style="font-size: 88%;"}
+
+**Assistant Professor**  — Dept. of Mathematics & Applied Computer Science  
+*Technical University of Madrid*
+
+**Visiting Researcher** — Dept. of Health Sciences  
+*Northeastern University, Boston* · Host: Prof. Sara López-Pintado  
+*Functional data & mixed effects models for biomedical data*
+
+**Research Fellow** - RCCHU (Real Colegio Complutense at Harvard University)
+
+
+<br>
+
+- **PhD in Statistics** — Universidad de Granada (2018)  
+*Estimation methods for functional time series in Hilbert and Banach spaces*  
+
+- Previously: Visiting researcher at Network Science Institute (Northeastern University) and MGH (Harvard University) · Complutense University of Madrid · University of Oviedo · Data analyst, Health Dept. of Asturias during COVID-19 pandemic
+
+:::
+
+:::
+
+::: {.column width="35%"}
+
+::: {style="font-size: 82%; margin-top: 0.5em;"}
+
+**Research lines**
+
+🔬 Functional data & longitudinal models in biostatistics
+
+🌐 Network analysis — mobility & equity
+
+🗳️ Survey analysis & electoral statistics
+
+
+<br>
+
+**Find me**
+
+🌍 [dadosdelaplace.github.io](https://dadosdelaplace.github.io)  
+🐙 `@dadosdelaplace`  
+📧 j.alvarezliebana@northeastern.edu
+:::
+
+:::
+:::
+
+::: {.notes}
+Thank you for the invitation — it is a pleasure to be here.
+
+My name is Javier Álvarez Liébana, I am an Assistant Professor of Statistics at the Universidad Politécnica de Madrid, and I am currently a visiting researcher at Northeastern University, working with Professor Sara López-Pintado on functional data methods and mixed effects models for biomedical data. My PhD was on functional time series and over the last few years my research has moved increasingly toward applications in biostatistics, network analysis, and computational social science. Today I want to share with you an introduction to Functional Data Analysis — a framework I work with and that I think has a lot to offer to anyone working with health data. The talk is designed to be accessible — no prior FDA background assumed — so please feel free to interrupt with questions at any point.
+
+Brief intro — keep it to 60 seconds. Assistant Professor at UPM (Civil Engineering School, Mathematics dept). Currently visiting Northeastern with Sara Lopez-Pintado — working on functional data and mixed effects models applied to biomedical data. 
+
+Three research lines: FDA/longitudinal in biostatistics, network analysis for mobility and equity, electoral survey analysis. goffda is the R package, published in Scandinavian Journal of Statistics with Eduardo García-Portugués.
+:::
+
+
+# Why we need FDA? {background-color="#1e3a5f"}
+
+---
+
+## The data we actually have
+
+
+
+Some of the most important data sources in health sciences are **not really vectors of numbers** — they are curves:
+
+::: {.fragment}
+- **Growth trajectories** — height over age from birth to adulthood
+:::
+
+::: {.fragment}
+- **Wearable sensor signals** — accelerometry, heart rate, glucose monitors
+:::
+
+::: {.fragment}
+- **Longitudinal biomarker profiles** — CD4 counts, PSA, cortisol curves
+:::
+
+::: {.fragment}
+- **Gene expression time courses** — RNA-seq over developmental stages
+:::
+
+::: {.fragment}
+
+- **Neuroimaging signals** — EEG, fMRI BOLD time series
+
+:::
+
+::: {.fragment}
+
+> These are not vectors — they are discrete samples of an underlying continuous function.
+
+:::
+
+
+::: {.notes}
+The key point here is motivational. The audience needs to feel the problem before any methodology. These data types are familiar to any health researcher — the question is what goes wrong when we use standard multivariate or longitudinal methods.
+
+The question is: what happens when we try to analyze them with standard multivariate or longitudinal methods? Why we need the FDA approach? The next three slides show three concrete failure modes.
+:::
+
+---
+
+## Problem 1: the exchangeability trap
+
+> What happens when we treat a curve as a vector?
+
+::: {.columns}
+::: {.column width="45%"}
+
+::: {style="font-size: 70%;"}
+
+**Setting:** childhood height measured at ages 2, 5, 8, 12, 16
+
+**Multivariate approach:** treat each age as a separate variable
+
+::: {.fragment}
+
+**Problems:**
+
+- The covariance matrix $\Sigma$ depends entirely on **which ages were chosen** — two studies with different measurement schedules are incomparable
+
+:::
+
+::: {.fragment}
+- Biological features (pubertal growth spurt) are **invisible**
+
+:::
+
+::: {.fragment}
+
+- Permuting ages leaves multivariate analysis unchanged — but completely destroys the biological meaning
+
+:::
+
+:::
+
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-discretization}
+#| fig-height: 5
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+
+tb_g <- as_tibble(girls) |>
+  mutate(age = ages) |>
+  pivot_longer(-age, names_to = "subject", values_to = "height")
+
+
+set.seed(1)
+sel_ages <- c(2, 5, 8, 12, 16)
+sel_idx  <- sapply(sel_ages, function(a) which.min(abs(ages - a)))
+
+# show 8 individual girls
+idx_girls <- c(1, 5, 10, 15, 20, 30, 40, 50)
+
+tb_sel <- as_tibble(girls[, idx_girls]) |>
+  mutate(age = ages) |>
+  pivot_longer(-age, names_to = "subject", values_to = "height")
+
+tb_pts <- as_tibble(girls[sel_idx, idx_girls]) |>
+  mutate(age = sel_ages) |>
+  pivot_longer(-age, names_to = "subject", values_to = "height")
+
+ggplot(tb_sel, aes(age, height, group = subject, color = subject)) +
+  geom_line(alpha = 0.4, linewidth = 0.7, linetype = "dashed") +
+  geom_point(data = tb_pts, aes(age, height),
+             size = 4, alpha = 0.75) +
+  geom_vline(xintercept = sel_ages, linetype = "dotted",
+             color = "grey60", linewidth = 0.8) +
+  scale_color_viridis_d(guide = "none") +
+  annotate("text", x = 12, y = 85,
+           label = "Observed\ntime points", color = "grey30",
+           size = 4.5, hjust = 0.5) +
+  labs(title = "The discretization trap",
+       subtitle = "Dots = what multivariate analysis sees. Lines = what actually exists.",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda()
+```
+
+:::
+:::
+
+::: {.callout-warning icon=false}
+## The core issue
+The **ordering** and **continuity** of time are ignored. FDA treats the measurement schedule as what it is: a sampling design.
+:::
+
+
+::: {.notes}
+
+
+The key insight is that the measurement schedule is a design choice, not a
+property of the data. A child's height exists continuously — we just happen
+to measure it at 5 time points. Multivariate analysis treats those 5 numbers
+as 5 separate variables with no particular ordering. FDA treats them as
+5 noisy observations of a single continuous curve.
+
+This has an immediate practical consequence: two studies that measured at
+different ages cannot be directly compared in the multivariate framework.
+In the functional framework, both estimate the same underlying curve C(s,t)
+and are directly comparable.
+
+Mixed models do respect temporal ordering — but they impose a 
+**parametric mean** and a **parametric covariance structure**.
+FDA estimates both non-parametrically, directly from the data.
+The measurement schedule remains a design choice, not a constraint
+on what can be estimated.
+
+:::
+
+---
+
+## Problem 2: the rigid model trap
+
+> What happens when we impose a parametric mean structure?
+
+::: {.columns}
+::: {.column width="51%"}
+
+::: {style="font-size: 73%;"}
+
+**Setting:** CD4 cell counts in HIV patients *(Zeger & Diggle, 1994)*.
+
+**Linear mixed model approach:** assume a parametric mean trajectory — linear or quadratic in time.
+
+$$\mu(t) = \beta_0 + \beta_1 t + \beta_2 t^2$$
+
+::: {.fragment}
+
+**Problems:**
+
+- A parabola has **exactly one turning point** — but the true trajectory may decline, plateau, rebound, or decline
+
+:::
+
+::: {.fragment}
+- The variance structure is assumed **constant** ($\sigma^2 \quad$) or AR(1) — cannot detect that variability is higher at certain stages of disease
+
+:::
+
+::: {.fragment}
+
+- Clinically meaningful features — **time to nadir**, **rate of decline pre-treatment**, **rebound after ART** — are invisible or distorted
+
+:::
+
+:::
+
+:::
+
+::: {.column width="49%"}
+
+```{r fig-rigid-model}
+#| fig-height: 7.5
+
+set.seed(42)
+t_hiv <- seq(0, 36, length.out = 50)
+n_hiv <- 40
+
+# Simulate realistic CD4 trajectories: decline then partial recovery
+sim_cd4 <- function(i) {
+  nadir_t   <- runif(1, 10, 20)
+  nadir_val <- runif(1, 100, 300)
+  baseline  <- runif(1, 600, 900)
+  recovery  <- runif(1, 0.3, 0.8)
+  baseline * exp(-0.08 * t_hiv) +
+    nadir_val * (1 - exp(-0.2 * abs(t_hiv - nadir_t))) * recovery +
+    rnorm(length(t_hiv), 0, 20)
+}
+
+cd4_mat <- sapply(1:n_hiv, sim_cd4)
+cd4_df  <- as.data.frame(cd4_mat) |>
+  setNames(paste0("s", 1:n_hiv)) |>
+  mutate(time = t_hiv) |>
+  pivot_longer(-time, names_to = "subject", values_to = "cd4")
+
+# Fit quadratic mean
+lm_fit   <- lm(cd4 ~ poly(time, 2), data = cd4_df)
+pred_df  <- tibble(time = t_hiv,
+                   quad = predict(lm_fit, newdata = tibble(time = t_hiv)),
+                   true = rowMeans(cd4_mat))
+
+ggplot(cd4_df, aes(time, cd4, group = subject)) +
+  geom_line(alpha = 0.18, color = "#1e3a5f", linewidth = 0.5) +
+  geom_line(data = pred_df, aes(time, quad, group = 1),
+            color = "#e9c46a", linewidth = 1.8, linetype = "dashed") +
+  geom_line(data = pred_df, aes(time, true, group = 1),
+            color = "#e63946", linewidth = 1.4) +
+  annotate("text", x = 30, y = 750,
+           label = "Quadratic fit", color = "#e9c46a",
+           fontface = "bold", size = 4.5) +
+  annotate("text", x = 30, y = 680,
+           label = "True mean curve", color = "#e63946",
+           fontface = "bold", size = 4.5) +
+  labs(title = "The rigid model trap",
+       subtitle = "CD4 count trajectories — HIV patients (simulated)",
+       x = "Months since diagnosis", y = "CD4 count (cells/mm3)") +
+  theme_fda()
+```
+
+:::
+:::
+
+::: {.notes}
+
+CD4+ T-cells are a type of white blood cell that plays a central role in the immune response. HIV specifically targets and destroys CD4+ cells, so their count (measured in cells/mm³) is the primary clinical marker of disease progression. A healthy count is 500–1500 cells/mm³. As HIV progresses untreated, CD4 count falls — below 200 cells/mm³ is the threshold for AIDS diagnosis. With antiretroviral therapy (ART), CD4 count partially recovers. The trajectory of CD4 over time — its rate of decline, time to nadir, and post-treatment rebound — is far more informative than any single measurement, which is exactly why it is a canonical example for FDA: the clinically meaningful information lives in the shape of the curve, not in a scalar summary.
+
+The quadratic mean is shown in yellow — it captures the general downward trend
+but completely misses the heterogeneity in individual trajectories. Some patients
+decline fast and recover, others decline slowly without recovery, others show
+biphasic patterns. These clinically meaningful differences are invisible to a
+model that forces everyone onto the same parabola.
+
+FDA estimates the mean curve non-parametrically — it follows the data rather
+than imposing a shape. And it estimates the covariance surface C(s,t) freely,
+which reveals that variability is much higher at certain stages of disease
+progression than at others.
+:::
+
+---
+
+## Problem 3: the signal is in the shape
+
+> What happens when we summarize a curve to a scalar?
+
+::: {.columns}
+::: {.column width="55%"}
+
+::: {style="font-size: 71%;"}
+
+**Setting:** physical activity measured by accelerometry — NHANES substudy *(Leroux et al., 2019)*.
+
+**Standard approach:** summarize to total activity count per day — one number per subject.
+
+::: {.fragment}
+
+**The problem:** two subjects with **identical total activity** can have completely different daily patterns:
+
+- One is active in the morning, sedentary in the afternoon
+- The other is sedentary in the morning, active in the evening
+
+:::
+
+::: {.fragment}
+
+**Clinically, these are different phenotypes:**
+
+- Circadian disruption
+- Frailty patterns
+- Sleep disorders
+- Metabolic risk profiles
+
+The scalar summary discards exactly the information that matters.
+:::
+
+:::
+
+:::
+
+::: {.column width="45%"}
+
+```{r fig-actigraphy}
+#| fig-height: 7.5
+
+set.seed(99)
+hours <- seq(0, 24, length.out = 200)
+
+# Subject A: morning active
+subj_A <- 2 * dnorm(hours, mean = 9,  sd = 2) * 100 +
+           1 * dnorm(hours, mean = 14, sd = 1) * 100 +
+           rnorm(200, 0, 0.8)
+subj_A <- pmax(subj_A, 0)
+
+# Subject B: evening active — same total
+subj_B <- 1.5 * dnorm(hours, mean = 18, sd = 2) * 100 +
+          1.2 * dnorm(hours, mean = 20, sd = 1.5) * 100 +
+          rnorm(200, 0, 0.8)
+subj_B <- pmax(subj_B, 0)
+
+# Scale so totals are equal
+subj_B <- subj_B * (sum(subj_A) / sum(subj_B))
+
+act_df <- bind_rows(
+  tibble(hour = hours, activity = subj_A, subject = "Morning-active (A)"),
+  tibble(hour = hours, activity = subj_B, subject = "Evening-active (B)")
+)
+
+ggplot(act_df, aes(hour, activity, color = subject, fill = subject)) +
+  geom_area(alpha = 0.25, position = "identity") +
+  geom_line(linewidth = 1.3) +
+  scale_color_manual(values = c("#e63946", "#2a9d8f"), name = NULL) +
+  scale_fill_manual(values  = c("#e63946", "#2a9d8f"), name = NULL) +
+  annotate("text", x = 12, y = max(subj_A) * 1.1,
+           label = "Same total activity count\nCompletely different shapes",
+           color = "#0f1f3d", size = 5, fontface = "bold") +
+  labs(title = "The aggregation trap",
+       subtitle = "Accelerometry — simulated daily activity profiles",
+       x = "Hour of day", y = "Activity (counts/min)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+```
+
+:::
+:::
+
+::: {.notes}
+Reference: Leroux et al. (2019), Statistics in Biosciences; Goldsmith et al. (2016), JASA.
+
+This is perhaps the most intuitive failure mode for a clinical audience.
+The total activity count is the most commonly reported summary in
+accelerometry studies — steps per day, activity counts per day. But
+it discards all temporal information.
+
+FDA treats the 24-hour activity profile as a single functional observation.
+The mean function tells you the typical daily pattern. The covariance
+surface tells you at which hours people differ most. FPCA reveals
+phenotypes — morning-active vs evening-active vs uniformly sedentary —
+that are invisible in any scalar summary.
+
+Leroux et al. (2019) showed that functional predictors from accelerometry
+outperform scalar summaries in predicting mortality and chronic disease,
+precisely because the shape of the activity curve contains clinical
+information beyond the total.
+:::
+
+---
+
+## What Changes?
+
+::: {style="font-size: 78%;"}
+
+
+| | Multivariate | Mixed effects / Longitudinal | FDA |
+|---|---|---|---|
+| Unit of observation | Vector $\mathbf{x}_i \in \mathbb{R}^p$ | Vector at fixed time points | Function $x_i(t) \in L^2(T)$ |
+| Mean structure | $\bar{\mathbf{x}} \in \mathbb{R}^p$ | Parametric $\mu(t) = \mathbf{z}^\top\boldsymbol{\beta}$ | Non-parametric $\mu(t)$ — estimated freely |
+| Covariance structure | $p \times p$ matrix $\Sigma$ | Parametric: AR(1), compound symmetry... | Surface $C(s,t)$ — estimated freely |
+| Temporal ordering | ❌ Ignored — coordinates exchangeable | ✅ Respected via parametric structure | ✅ Respected via smoothness assumption |
+| Measurement schedule | Defines the data | Defines the data | Just a sampling design |
+| Between-study comparability | ❌ Depends on which variables measured | ❌ Depends on measurement times | ✅ $C(s,t)$ is a process property |
+| Derivative inference | ❌ Not possible | ❌ Not possible | ✅ $x_i'(t)$, $x_i''(t)$ are objects |
+| Dimensionality reduction | PCA in $\mathbb{R}^p$ | Not standard | FPCA — optimal basis from data |
+:::
+
+::: {.callout-note icon=false}
+## The key longitudinal vs FDA distinction
+Mixed models ask: *"what is the average trajectory and how do subjects deviate from it — within a parametric family?"*
+FDA asks: *"what is the actual shape of the mean curve, how does variability evolve over time, and what modes of variation exist in the sample?"*
+:::
+
+::: {.notes}
+This is the slide to come back to when someone asks "why not just use a mixed model?". The answer has three parts.
+
+First, the mean: a mixed model forces the mean trajectory into a parametric family (linear, quadratic, spline with fixed knots) — FDA estimates it freely. 
+
+Second, the covariance: a mixed model assumes a parametric correlation structure (AR(1), compound symmetry, unstructured but finite) — FDA estimates C(s,t) as a full surface.
+
+Third, the measurement schedule: in a mixed model, the timepoints you chose partly define your model; in FDA they are just a sampling design and C(s,t) is a property of the process, not of your study design.
+
+The sparse/irregular caveat: for very sparse longitudinal data (3-5 obs per subject), pure FDA requires PACE methods — mixed models are more natural there.
+:::
+
+---
+
+
+## Curse of dimensionality?
+
+> Does FDA solve the Curse of Dimensionality? Counterintuitively — yes
+
+::: {.columns}
+::: {.column width="50%"}
+
+::: {style="font-size: 75%;"}
+
+**The curse in multivariate analysis:**
+
+With $p$ variables and $n$ observations, data matrix is $n \times p$. As $p \to \infty \quad$:
+
+- The sample covariance matrix $\widehat{\Sigma}\quad$ ($p \times p \quad$) becomes **singular or poorly estimated** — you need $n \gg p$
+- Distances become meaningless — all points equidistant in high dimensions
+- PCA needs $n > p$ for a well-defined solution
+
+**How FDA avoids it:**
+
+FDA does not estimate a $p \times p$ matrix. It estimates a **smooth surface** $C(s,t)$ — using the fact that nearby time points are correlated. The smoothness assumption drastically reduces the effective number of parameters.
+:::
+
+:::
+
+::: {.column width="50%"}
+
+```{r fig-curse}
+#| fig-height: 9
+
+library(tidyverse)
+library(patchwork)
+
+# ── Panel 1: rank deficiency of sample cov matrix as p grows ─────────────────
+set.seed(1)
+n_subj <- 80
+ps     <- c(10, 30, 50, 80, 100, 150, 200, 300, 500)
+
+rank_df <- map_dfr(ps, function(p) {
+  # Simulate functional data: smooth curves sampled at p points
+  t_grid <- seq(0, 1, length.out = p)
+  # Generate from a smooth process (low intrinsic dim)
+  scores <- matrix(rnorm(n_subj * 5), n_subj, 5)
+  basis  <- sapply(1:5, function(k) sin(k * pi * t_grid))
+  X      <- scores %*% t(basis) + matrix(rnorm(n_subj * p, 0, 0.1), n_subj, p)
+  Sigma  <- cov(X)
+  eigs   <- eigen(Sigma, only.values = TRUE)$values
+  eff_rank <- sum(eigs > 1e-8)
+  tibble(
+    p         = p,
+    eff_rank  = eff_rank,
+    ratio     = eff_rank / p,
+    singular  = p > n_subj
+  )
+})
+
+p1 <- ggplot(rank_df, aes(p, eff_rank)) +
+  geom_line(color = "#1e3a5f", linewidth = 1.2) +
+  geom_point(aes(color = singular), size = 3) +
+  geom_vline(xintercept = n_subj, linetype = "dashed",
+             color = "#e63946", linewidth = 0.8) +
+  scale_color_manual(values = c("FALSE" = "#2a9d8f", "TRUE" = "#e63946"),
+                     labels = c("FALSE" = "Full rank", "TRUE" = "Rank deficient"),
+                     name = NULL) +
+  annotate("text", x = n_subj + 6, y = 15,
+           label = paste0("p = n = ", n_subj),
+           color = "#e63946", size = 6, hjust = 0) +
+  labs(title    = "Effective rank of sample covariance",
+       subtitle = paste0("n = ", n_subj, " subjects — rank deficient when p > n"),
+       x = "Number of time points p", y = "Effective rank") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+# ── Panel 2: FPCA reduces to K << p dimensions ───────────────────────────────
+set.seed(2)
+p_large <- 300
+t_grid  <- seq(0, 1, length.out = p_large)
+K_true  <- 4
+
+# Smooth functional data with K_true intrinsic dimensions
+basis_true <- sapply(1:K_true, function(k) sin(k * pi * t_grid))
+scores_true <- matrix(rnorm(n_subj * K_true, 0,
+                             c(3, 2, 1.2, 0.8)), n_subj, K_true)
+X_large <- scores_true %*% t(basis_true) +
+           matrix(rnorm(n_subj * p_large, 0, 0.15), n_subj, p_large)
+
+bs_cd  <- fda::create.bspline.basis(rangeval = c(0,1), nbasis = 20, norder = 4)
+fdp_cd <- fda::fdPar(bs_cd, Lfdobj = 2, lambda = 1e-3)
+fd_cd  <- fda::smooth.basis(t_grid, t(X_large), fdp_cd)$fd
+fpca_cd <- fda::pca.fd(fd_cd, nharm = 10)
+
+pve_cd <- cumsum(fpca_cd$varprop) * 100
+
+scree_cd <- tibble(k = 1:10, pve = pve_cd)
+
+p2 <- ggplot(scree_cd, aes(k, pve)) +
+  geom_line(color = "#2a9d8f", linewidth = 1.3) +
+  geom_point(color = "#2a9d8f", size = 3) +
+  geom_hline(yintercept = 95, linetype = "dashed",
+             color = "#e63946", linewidth = 0.8) +
+  annotate("text", x = 7, y = 93,
+           label = "95% variance explained", color = "#e63946",
+           size = 3.5) +
+  annotate("segment", x = K_true, xend = K_true,
+           y = 0, yend = pve_cd[K_true],
+           color = "#1e3a5f", linewidth = 1, linetype = "dotted") +
+  annotate("text", x = K_true + 0.3, y = 30,
+           label = paste0("K = ", K_true, "\n(true dim)"),
+           color = "#1e3a5f", size = 3.5, hjust = 0) +
+  scale_x_continuous(breaks = 1:10) +
+  labs(title    = "FPCA recovers intrinsic dimensionality",
+       subtitle = paste0("p = ", p_large, " time points → K = ",
+                         K_true, " components explain >95% variance"),
+       x = "Number of components K", y = "Cumulative variance explained (%)") +
+  theme_fda()
+
+p1 # / p2 + plot_layout(heights = c(1, 1))
+```
+
+:::
+:::
+
+::: {.notes}
+This is the clean answer to "but doesn't high-dimensional data always cause problems?". In multivariate analysis, yes — when p > n the covariance matrix is rank-deficient and PCA is undefined or unstable. FDA avoids this by never estimating a p x p matrix. It estimates a smooth surface C(s,t) using the structural assumption that nearby time points are correlated — which radically reduces the effective number of parameters regardless of p. FPCA then finds the intrinsic dimensionality K of the data — typically K is 3-5 even when p is in the hundreds. 
+
+The left panel shows that once p > n, the sample covariance becomes rank-deficient.
+
+The right panel shows that FPCA on the same data correctly identifies K = 4 intrinsic dimensions, explaining >95% of variance, regardless of p being 300.
+:::
+
+
+# What is FDA? {background-color="#1e3a5f"}
+
+From vectors to functions 
+
+
+---
+
+## What is Functional Data Analysis?
+
+::: {.notes}
+
+The term was coined by Ramsay & Dalzell (1991). The foundational textbook is Ramsay & Silverman (2005), still the central reference.
+
+What is NOT FDA: having many variables does not make it FDA. What defines FDA is that observations are intrinsically functional — there is a continuous underlying process of which the discrete data are a noisy sample.
+We have just seen examples where treating curves as vectors or as parametric longitudinal profiles lost clinically relevant information. The natural question is: what statistical framework actually respects the nature of this data?
+The answer is FDA. The idea is conceptually simple but has profound consequences: instead of observing a vector of p numbers per subject, we observe a function — a curve defined over a continuous domain (time, frequency, space...) — of which we only see p snapshots.
+
+This is not just a notational change. It is a change of statistical space: from working in R^p
+
+Rp to working in a function space — typically a Hilbert space of square-integrable functions, L2. That shift has implications for how we define mean, variance, distance, projection — everything.
+:::
+
+> Each observation is a function, not a vector.
+
+
+::: {.columns}
+::: {.column width="50%"}
+
+**The classical statistical unit:**
+
+$$\mathbf{x}_i = (x_{i1}, x_{i2}, \ldots, x_{ip}) \in \mathbb{R}^p, \quad i=1,\ldots,n$$
+
+A finite-dimensional vector. Our data lives in $\mathbb{R}^p$.
+
+
+:::
+
+::: {.column width="50%"}
+
+
+::: {.callout-note icon=false}
+## The FDA Shift
+
+The *unit of observation* is a **FUNCTION**: where multivariate analysis sees p variables, FDA sees p snapshots of a single continuous process. Each subject $i$ contributes **one curve** $X_i(t)$.
+:::
+
+
+:::
+:::
+
+. . .
+
+**The functional statistical unit:**
+
+$$X_i(t), \quad t \in T \subseteq \mathbb{R}, \quad i=1,\ldots,n$$
+
+A curve defined over a continuous domain. Inference lives in an **infinite-dimensional space**.
+
+
+> «The data are functions, and the methods of analysis must respect this»
+> — Ramsay & Silverman, Functional Data Analysis (2005).
+
+---
+
+## Why does the space matter?
+
+::: {.columns}
+::: {.column width="40%"}
+Once we commit to a function space, we must **redefine everything**:
+
+| Concept | $\mathbb{R}^p$ | Function space |
+|---------|--------------|----------------|
+| Mean | $\bar{\mathbf{x}} \in \mathbb{R}^p$ a vector | $\mu(t)$, a curve |
+| Covariance | $p \times p$ matrix | $C(s,t)$ (surface) |
+| Distance | Euclidean $\|\cdot\|_2$ | $\int [x(t)-y(t)]^2 dt$ |
+| PCA | Eigenvectors in $\mathbb{R}^p$ | Eigenfunctions |
+
+Changing the space changes what **questions you can ask**.
+:::
+
+::: {.column width="60%"}
+
+```{r fig-shift}
+#| fig-height: 7
+#| fig-cap: "An example of FDA"
+#| message: false
+#| warning: false
+data("growth")
+library(tidyverse)
+ages <- growth$age
+girls <- growth$hgtf # 54 girls
+
+tb_curves <-
+  as_tibble(girls) |>
+  mutate("age" = ages) |>
+  pivot_longer(-age, names_to = "subject", values_to = "height")
+
+ggplot(tb_curves, aes(age, height, group = subject)) +
+  geom_line(alpha = 0.25, color = "#1e3a5f", linewidth = 0.5) +
+  stat_summary(aes(group = 1), fun = mean,
+               geom = "line", color = "#e63946",
+               linewidth = 1.6, linetype = "solid") +
+  annotate("text", x = 16, y = 130,
+           label = "μ(t): mean curve", color = "#e63946",
+           hjust = 1, fontface = "bold", size = 5) +
+  labs(title = "Berkeley Growth Study",
+       subtitle = "Subsample of 54 girls (from age 1 to 18). Each curve (function) is one observation",
+       x = "Age (t in years)", y = "Height (cm)") +
+  theme_fda()
+```
+:::
+:::
+
+---
+
+## Where do our data (curves) lives?
+
+The choice of functional space has **direct consequences** for inference and what tools apply.
+
+::: {.columns}
+::: {.column width="50%"}
+
+
+### $L^2(T)$ — Square-integrable functions
+
+::: {style="font-size: 80%;"}
+$L^2$ (**Hilbert space**) is the $\infty$-dimensional analogue of $\mathbb{R}^p$.
+
+
+$$L^2(T) = \left\{ x(t): \int_{T} x(t)^2 \, dt < \infty \right\}$$
+
+**Inner product**: $\langle x, y \rangle_{L^2} = \int_T x(t) y(t)dt$
+
+✅ Supports FPCA, (functional) regression, projections (coordinates, orthonormal bases, etc)  
+
+⚠️ Does **not** guarantee continuity or differentiability.
+
+:::
+
+::: {.fragment}
+
+### $W^{m,2}(T)$ — Sobolev spaces
+
+::: {style="font-size: 80%;"}
+
+m derivatives are also living in $L^2$:
+
+$$W^{m,2}(T) = \left\{ x \in L^2: x^{(1)}, \ldots, x^{(m)} \in L^2 \right\}$$
+
+✅ Supports derivative inference (velocity, acceleration)  
+
+
+:::
+
+:::
+
+::: {.notes}
+
+the L2 norm measures global energy — the area between two curves. But our observations are pointwise: we record x(t1),x(t2),…x(t_1), x(t_2), \ldots
+x(t1​),x(t2​),… at specific time points. Two subjects whose curves are nearly identical in L2L^2
+L2 norm could still show very different observed values, depending on when we measured them. In an RKHS, the norm directly controls pointwise behavior: small norm implies small values everywhere. This makes the space statistically coherent with how functional data are actually collected.
+
+La distinción que vale la pena mantener es:
+
+L2L^2
+L2 mide
+energía global — lo que ocurre en un conjunto de medida cero (un punto) no afecta a la norma
+RKHS mide algo que sí controla lo puntual — por eso es el espacio natural cuando tus datos son muestras en puntos
+
+✅ $W^{2,2}$ functions in $\mathbb{R}$ are continuous
+
+
+:::
+
+:::
+
+::: {.column width="50%"}
+
+
+```{r}
+t <- seq(0.000001, 1, length.out = 500)
+set.seed(12345)
+f_l2 <- sin(2 * pi * t) +
+  ifelse(t > 0.25 & t < 0.255, 2.5, 0) +
+  ifelse(t > 0.55 & t < 0.552, -2, 0) +
+  ifelse(t > 0.78 & t < 0.782, 1.8, 0) +
+  0.15 * rnorm(length(t))
+f_sob <- 1.2 * sin(2*pi*t) +
+    0.4 * sin(6*pi*t) +
+    0.15 * sin(10*pi*t)
+f_banach <- abs(t)^(-0.5)
+```
+
+```{r}
+#| fig-height: 7
+ggplot(tibble("t" = t, "f" = f_l2, "type" = "Hilbert (square-integrable)") |> 
+         bind_rows(tibble("t" = t, "f" = f_sob, "type" = "Sobolev (m = 2)"))) +
+  geom_line(aes(x = t, y = f, color = type),
+            alpha = 0.75, linewidth = 1.7) +
+  MetBrewer::scale_color_met_d(palette_name = "Renoir") +
+  labs(title = "Curves living in Hilbert and Sobolev spaces",
+       x = "t", y = "x(t)") +
+  theme_fda()
+```
+
+:::
+
+:::
+
+
+---
+
+## Where do our data (curves) lives?
+
+| Space | Key property | Norm / inner product | Typical use in FDA |
+|-------|-------------|---------------------|--------------------|
+| $L^2(T)$ | Square-integrable | $\int x(t)y(t)\,dt$ | FPCA, functional regression |
+| $W^{m,2}(T)$ | $m$ derivatives in $L^2$ | $L^2$ norm + derivatives | Penalized smoothing, derivative inference |
+| $C(T),\, C^k(T)$ | Continuous / $k$-smooth | Supremum norm | Depth measures, hypothesis testing |
+| RKHS | Pointwise evaluation bounded | Kernel-induced | Regularized regression, kernel FDA |
+
+<br>
+
+::: {.callout-important icon=false}
+**In practice**, most FDA software assumes $L^2$ or Sobolev structure implicitly. Being explicit about the space is not pedantry: **it determines what questions you can legitimately ask of your data.**
+:::
+
+---
+
+## When is it FDA? Three conditions
+
+::: {.notes}
+
+What is NOT FDA: having many variables does not make it FDA. What defines FDA is that observations are intrinsically functional — there is a continuous underlying process of which the discrete data are a noisy sample.
+
+A practical question that always comes up: when is FDA justified over longitudinal or multivariate methods? Three conditions work as a guide:
+
+1. Continuity of the underlying process. The phenomenon is continuous in its domain. Blood pressure does not jump discretely between measurements — a continuous process exists of which we only observe points. If the underlying process is genuinely discrete, FDA does not apply.
+
+2. Local dependence structure (smoothness). Nearby observations are more similar than distant ones — there is a correlation structure that depends on proximity. This is not just a computational convenience: it is a substantive assumption about the biology. Glucose at 10:00 predicts glucose at 10:05 far better than at 18:00. Standard multivariate methods ignore this ordering; FDA exploits it.
+
++3. The whole curve is the inferential object. We are not interested in the value at a specific time point, nor in a scalar summary (mean, AUC, slope). We want to make inference on the complete function — its shape, variability, derivatives, local features. If the scientific question can be answered with a scalar summary, you do not need FDA.
+
+Grey zone — sparse longitudinal data: with 3–5 measurements per subject you cannot reliably estimate one function per subject. PACE methods (Yao, Müller & Wang, JASA 2005) handle this by borrowing strength across subjects via the population covariance structure — FDA adapted to the clinical reality of many studies.
+:::
+
+
+::: {.columns}
+::: {.column width="65%"}
+A practical checklist before committing to a FDA framework:
+
+
+::: {style="font-size: 85%;"}
+
+::: {.fragment}
+**1. Continuity of the underlying process**  
+The phenomenon is continuous in its domain. **Blood pressure** does not jump discretely between observations (a continuous process exists).
+
+:::
+
+<br>
+
+::: {.fragment}
+
+**2. Local dependence structure (smoothness)**  
+Nearby observations are more similar than distant ones. **Glucose** at 10:00 predicts glucose at 10:05 far better than at 18:00. This ordering is *structural*, not accidental — FDA exploits it; multivariate ignore it.
+
+:::
+
+<br>
+
+::: {.fragment}
+
+**3. The curve itself is the inferential object**  
+We want to make inference on the *whole function* — its shape, derivatives, local features — not on a scalar summary (mean, AUC, slope).  
+
+:::
+:::
+:::
+
+::: {.column width="35%"}
+::: {.callout-warning icon=false}
+## Grey zone: sparse longitudinal data
+If you have 3–5 observations per subject, you **cannot** reliably estimate one function per subject. **Solution:** PACE methods *(Yao, Müller & Wang, JASA 2005)*
+
+:::
+
+::: {.callout-note icon=false}
+## What is NOT FDA
+Having many variables or repeated measurements is not FDA.  
+
+What defines FDA is the commitment that the **data-generating process is a continuous function**
+:::
+:::
+:::
+
+---
+
+## The functional mean $\mu(t)$ {.center}
+
+::: {.notes}
+
+Conceptually it is the same operation — we average coordinate by coordinate — but now there are infinitely many coordinates, one per tt
+t. The mean is not a number or a finite vector. It is a curve.*
+
+*Why does this matter? Because the functional mean captures the typical shape of the process, not just its level. In growth curves, μ(t)\mu(t)
+μ(t) tells you the average height trajectory as a function of age — including the inflection of the pubertal growth spurt. A longitudinal model with a parametric mean (linear, quadratic) gives you an approximation; FDA gives you the actual shape, estimated directly from the data.*
+
+*The key visual:
+n individual curves in translucent grey, with μ(t)
+μ(t) overlaid as a bold curve. It should be immediately clear that μ(t)\mu(t)
+μ(t) has its own shape — it is not a straight line.*
+
+:::
+::: {.columns}
+::: {.column width="55%"}
+
+::: {style="font-size: 90%;"}
+
+**Multivariate mean:** average over $n$ vectors in $\mathbb{R}^p$
+
+$$\bar{\mathbf{x}} = \frac{1}{n}\sum_{i=1}^n \mathbf{x}_i \in \mathbb{R}^p$$
+
+One number per variable: $p$ independent values. **Coordinates are exchangeable**.
+
+<br>
+
+::: {.fragment}
+
+**Functional mean:** average over $n$ functions pointwise
+
+$$\mu(t) = \frac{1}{n}\sum_{i=1}^n x_i(t), \quad t \in T$$
+
+**A curve** — evaluated at every $t$. Infinitely many "coordinates", one per $t$. The mean encodes the **typical shape** of the process —  including inflections, acceleration phases.
+
+:::
+
+:::
+:::
+
+::: {.column width="45%"}
+
+```{r}
+#| fig-height: 14
+boys <- growth$hgtm 
+mu_t_boys <- rowMeans(boys)
+mu_t_girls <- rowMeans(girls)
+
+tb_curves <-
+  as_tibble(girls) |>
+  mutate("age" = ages) |>
+  pivot_longer(-age, names_to = "subject", values_to = "height") |> 
+  mutate("sex" = "female") |> 
+  bind_rows(as_tibble(boys) |>
+              mutate("age" = ages) |>
+              pivot_longer(-age, names_to = "subject", values_to = "height") |> 
+              mutate("sex" = "male"))
+
+tb_mean <-
+  tibble("age" = ages, "mu" = mu_t_boys, "sex" = "male") |> 
+  bind_rows(tibble("age" = ages, "mu" = mu_t_girls,
+                   "sex" = "female"))
+gg1 <-
+  ggplot(tb_curves) +
+  geom_line(aes(x = age, y = height, color = sex, group = subject),
+            alpha = 0.3, linewidth = 0.5) +
+  geom_line(data = tb_mean, aes(x = age, y = mu, color = sex, group = sex),
+            linewidth = 1.5) +
+  scale_color_manual(values = c("#1e3a5f", "#e63946")) +
+  annotate("text", x = 7, y = 170,
+           label = "μ(t) (male)", color = "#e63946",
+           fontface = "bold", size = 6) +
+  annotate("text", x = 12.5, y = 120,
+           label = "μ(t) (male)", color = "#1e3a5f",
+           fontface = "bold", size = 6) +
+  annotate("segment", x = 16, xend = 16,
+           y = 135, yend = 175,
+           arrow = arrow(length = unit(0.2,"cm")),
+           color = "grey40", linewidth = 1) +
+  annotate("text", x = 16, y = 120,
+           label = "Pubertal growth\nspurt in males",
+           color = "grey30", size = 5, hjust = 0.5) +
+  labs(title = "Functional mean of height trajectories",
+       subtitle = "Berkeley Growth Study",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda()
+gg2 <-
+  ggplot(tb_curves |> 
+         left_join(tb_mean, by = c("age", "sex")) |> 
+         mutate("centered" = height - mu)) +
+  geom_line(aes(x = age, y = centered, color = sex, group = subject),
+            alpha = 0.3, linewidth = 0.75) +
+  scale_color_manual(values = c("#1e3a5f", "#e63946")) +
+  labs(title = "Functional mean of height trajectories AFTER CENTERED",
+       x = "Age (years)", y = "Deviation from the functional mean") +
+  theme_fda()
+gg1 / gg2
+```
+
+
+:::
+:::
+
+---
+
+## The Functional Variance $\sigma^2(t)$
+
+::: {.notes}
+
+The variance peak around age 11–13 reflects heterogeneity in the timing of the pubertal growth spurt — children differ most from each other at those ages.
+
+*A parametric longitudinal model cannot reveal this for two reasons. First, the mean shape is fixed in advance: a quadratic has exactly one turning point and cannot capture the sharp acceleration-deceleration of the growth spurt. Second, the variance is also parametrized: a standard mixed model assumes constant sigma
+or AR(1) correlation — it cannot detect that variability is higher at t≈12t 
+t≈12 than at t=5t = 5
+t=5, because that peak comes from timing heterogeneity, not from a parameter the model ever asks about.*
+
+*A parametric model answers the question you ask of it. "What is β2\beta_2
+β2?" — it will answer. But "at which ages are children most different from each other?" requires estimating σ2(t)\sigma^2(t)
+σ2(t) freely as a function — and only FDA does that.*
+
+:::
+
+::: {.columns}
+::: {.column width="45%"}
+We can also define the **variance function**:
+
+$$\sigma^2(t) = \frac{1}{n}\sum_{i=1}^n \left[x_i(t) - \mu(t)\right]^2$$
+
+This tells us: *at each age $t$, how much do children differ from the average?*
+
+
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-variance}
+#| fig-height: 9
+var_t <- apply(girls, 1, var)
+
+p1 <- ggplot(tb_curves |> filter(sex == "female"), aes(age, height, group = subject)) +
+  geom_line(alpha = 0.18, color = "#1e3a5f", linewidth = 0.5) +
+  geom_line(data = tb_mean |> filter(sex == "female"),
+            aes(age, mu, group = 1),
+            color = "#e63946", linewidth = 1.8, inherit.aes = FALSE) +
+  labs(title = "Individual curves + mean (females)",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda()
+
+p2 <- ggplot(tibble(age = ages, v = var_t), aes(age, v)) +
+  geom_area(fill = "#e63946", alpha = 0.3) +
+  geom_line(color = "#e63946", linewidth = 1.5) +
+  annotate("segment", x = 12, xend = 12,
+           y = 0, yend = max(var_t)*0.95,
+           linetype = "dashed", color = "grey40") +
+  annotate("text", x = 12.2, y = max(var_t)*0.65,
+           label = "Peak: pubertal timing", size = 4,
+           hjust = 0, color = "grey30") +
+  labs(title = expression(sigma^2*(t)*": variance function"),
+       x = "Age (years)", y = "Variance") +
+  theme_fda()
+
+p1 / p2 + plot_layout(heights = c(1.5, 1))
+```
+:::
+:::
+
+---
+
+## The functional covariance $C(s, t)$
+
+::: {.notes}
+
+The diagonal is \sigma^2(t)
+σ2(t) — variance at each age. The brightest point around s=t≈11s = t \approx 11
+s=t≈11–1212
+12 confirms that girls differ most from each other during the pubertal growth spurt.
+
+Off-diagonal: bottom-left corner is dark (early ages, low variance — all children similar at age 2–3); central-upper zone is bright (high covariance between intermediate and late ages — tall at 10 tends to mean tall at 15); early vs late ages are intermediate (being tall at 3 predicts adult height only weakly).
+
+* Sex differences: boys' diagonal peak reaches ~80 vs ~50 in girls — more absolute variability. The peak is shifted to s=t≈13s = t \approx 13
+s=t≈13–1515
+15 in boys, consistent with a later and more prolonged pubertal spurt. The off-diagonal high-covariance region is also broader in boys, suggesting greater heterogeneity in pubertal timing. Both sexes show a dark bottom-left corner (s,t<5s, t < 5
+s,t<5), but in boys it extends further — individual differences take longer to emerge.
+
+
+:::
+::: {.columns}
+::: {.column width="47%"}
+**Multi covariance:** a $p \times p$ matrix $\Sigma_{jk} = \text{Cov}(X_j, X_k)$
+
+**Functional covariance:** a **surface** over $T \times T$
+
+$$C(s,t) = \frac{1}{n}\sum_{i=1}^n [x_i(s)-\mu(s)][x_i(t)-\mu(t)]$$
+
+<br>
+
+::: {.fragment}
+
+::: {style="font-size: 93%;"}
+
+- $C(t,t) = \sigma^2(t)$ — variance function on diagonal
+- Off-diagonal: how much does height at age $s$ co-vary with height at age $t$?
+- Decays away from diagonal → short memory
+- Stays high everywhere → smooth, persistent process
+
+:::
+:::
+
+:::
+
+::: {.column width="53%"}
+
+```{r fig-cov-surface}
+#| fig-height: 10.7
+cov_mat <- cov(t(girls))   # p × p covariance matrix
+
+cov_df <- expand.grid(s = ages, t = ages) |>
+  mutate(C = as.vector(cov_mat))
+
+gg1 <-
+  ggplot(cov_df, aes(s, t, fill = C)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", name = "C(s,t)") +
+  coord_equal() +
+  labs(title = "Functional covariance surface C(s, t)",
+       subtitle = "Berkeley Growth Study — 54 girls",
+       x = "Age s (years)", y = "Age t (years)") +
+  theme_fda() +
+  theme(legend.position = "right")
+
+cov_mat <- cov(t(boys))
+
+cov_df <- expand.grid(s = ages, t = ages) |>
+  mutate(C = as.vector(cov_mat))
+
+gg2 <-
+  ggplot(cov_df, aes(s, t, fill = C)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "magma", name = "C(s,t)") +
+  coord_equal() +
+  labs(subtitle = "Berkeley Growth Study — 39 boys",
+       x = "Age s (years)", y = "Age t (years)") +
+  theme_fda() +
+  theme(legend.position = "right", 
+        plot.title = element_blank()) 
+gg1 / gg2
+```
+:::
+:::
+
+
+---
+
+## Why $C(s,t)$ is not just a big matrix?
+
+::: {.columns}
+::: {.column width="60%"}
+
+::: {style="font-size: 92%;"}
+**The multivariate cov matrix depends on measurement design.**
+
+* Study A measures at ages: 2, 5, 8, 12, 16  
+* Study B measures at ages: 3, 6, 10, 14
+
+$\Sigma_A$ and $\Sigma_B$ are **not comparable** — different indices and sizes.
+
+<br>
+
+::: {.fragment}
+
+**The functional covariance $C(s,t)$ is a property of the process**, not of the design. It can be evaluated at *any* pair of ages $(s, t)$, regardless of when measurements were taken.
+
+→ Enables **harmonization** across studies with different measurement schedules.  
+→ Enables **prediction** at unobserved time points.  
+
+:::
+
+:::
+:::
+
+::: {.column width="40%"}
+
+```{r fig-cov-slices}
+#| fig-height: 13.5
+
+# Covariance slices: C(s, ·) for a few fixed values of s
+slice_ages <- c(2, 8, 12, 17)
+idx        <- sapply(slice_ages, function(a) which.min(abs(ages - a)))
+
+slice_df <- map_dfr(seq_along(slice_ages), function(k) {
+  tibble(
+    t     = ages,
+    C     = cov_mat[idx[k], ],
+    fixed = paste0("s = ", slice_ages[k], " yrs")
+  )
+}) |> 
+  mutate("fixed" =
+           factor(fixed, levels = c("s = 2 yrs", "s = 8 yrs",
+                                    "s = 12 yrs", "s = 17 yrs")))
+
+ggplot(slice_df, aes(t, C, color = fixed)) +
+  geom_line(linewidth = 1.3) +
+  scale_color_brewer(palette = "Set1", name = "Fixed age s") +
+  labs(title = "Covariance slices C(s, ·) for fixed s",
+       subtitle = "How much does height at age s co-vary with height at each age t?",
+       x = "Age t (years)", y = "C(s, t)") +
+  theme_fda()
+```
+:::
+:::
+
+
+
+# From observations to population {background-color="#1e3a5f"}
+
+Functional bases
+
+---
+
+
+## From observations to population: basis
+
+Data arrive as discrete, noisy measurements:
+
+$$\{(t_{ij},\, y_{ij})\}_{j=1}^{m_i}, \quad y_{ij} = x_i(t_{ij}) + \varepsilon_{ij}$$
+
+where $m_i\quad$ represents the number of timepoints for subject $j$ and $t_{ij}$ the time point in which $j$-th measures was collected for $i$-th subject.
+
+::: {.fragment}
+
+**Goal:** recover the underlying function $x_i(t)$.
+
+:::
+
+::: {.fragment}
+
+### Strategy — basis representation
+
+::: {style="font-size: 90%;"}
+
+::: {.columns}
+::: {.column width="65%"}
+
+$$\widehat{x}_i(t) =  \sum_{k=1}^{K} c_{ik}\, \phi_k(t)$$
+
+- $\phi_k(t)$: known basis functions (B-splines, Fourier, wavelets...)
+- $c_{ik}$: subject-specific coefficients, estimated from data
+
+:::
+
+::: {.column width="35%"}
+
+Once $\widehat{x}_i(t)$ is available, we can: 
+
+✅ Evaluate at any $t$  
+✅ Differentiate (velocity, acceleration)  
+✅ Integrate  
+✅ Feed into functional models
+
+:::
+:::
+:::
+
+:::
+
+::: {.notes}
+We observe discrete noisy snapshots of a continuous curve — the goal is to recover the underlying function. Basis expansion is the standard strategy: express each curve as a weighted sum of K known basis functions, then estimate the subject-specific coefficients by minimizing a penalized least squares criterion. Once the smooth function is available, we can do things impossible with discrete measurements: evaluate at any unobserved time point, differentiate to get velocity and acceleration, integrate, and feed the estimated function directly into functional regression or FPCA. The choice of basis (B-splines, Fourier, wavelets) depends on the nature of the process — periodic, non-periodic, or with localized transient features.
+
+:::
+---
+
+
+## From observations to population: basis
+
+
+
+### Strategy — basis representation
+
+$$\widehat{x}_i(t) =  \sum_{k=1}^{K} c_{ik}\, \phi_k(t)$$
+
+- $\phi_k(t)$: known basis functions (B-splines, Fourier, wavelets...)
+- $c_{ik}$: subject-specific coefficients, estimated from data
+
+
+<br>
+
+::: {.fragment}
+
+Two main families of bases exist in FDA:
+
+* **Fixed bases**: the functions $\phi_k(t)$ are chosen **BEFORE** seeing the data — their shape is determined by construction (B-splines, Fourier, wavelets). Subject-specific coefficients $c_{ik}$ are then estimated by minimizing a data fit criterion.
+
+* **Data-driven bases**: the functions $\phi_k(t)$ are estimated from the **data themselves** — specifically from the **sample covariance structure**. They have no closed-form expression prior to estimation, and change with every new sample. The canonical example is FPCA, where the basis functions are the eigenfunctions of the estimated covariance operator.
+
+:::
+
+
+
+---
+
+
+
+
+## Fixed bases
+
+::: {.notes}
+
+Based on polynomials of degree d
+
+Imaging divide the time axis into intervals at fixed points called knots. On each interval you fit a polynomial, and you force them to join smoothly at the knots. Each basis function is just one of those local polynomial pieces.
+
+
+<br>
+
+Based on Sines and cosines at increasing frequencies — each basis function oscillates over the entire domain.
+
+<br>
+
+Scaled and shifted copies of a single oscillating function — each basis function is localized in both time and frequency simultaneously.
+
+Take a small wave that starts at zero, oscillates briefly, and returns to zero — a wavelet. Now make copies of it: some stretched (capturing slow variations), some compressed (capturing fast transients), placed at different positions along the time axis. Each copy sees only a small piece of the signal, at a specific resolution. Together they cover everything.
+
+:::
+
+
+::: {.notes}
+
+Fourier — periodicidad global
+La señal es periódica en todo el dominio y con una estructura de frecuencias estacionaria — las frecuencias presentes son las mismas en t=0t=0
+t=0 que en t=20t=20
+t=20. La base de Fourier asume que si hay una oscilación a frecuencia ω\omega
+ω, esa oscilación existe en todas partes.
+
+El gráfico de Fourier que ves es correcto en ese sentido — las curvas tienen un patrón que se repite a lo largo del día, y las frecuencias son globales.
+
+Wavelets — localización temporal
+La señal puede tener oscilaciones pero solo en ciertos momentos. Un spike de EEG a t=0.3t=0.3
+t=0.3 no implica nada sobre lo que ocurre a t=0.7t=0.7
+t=0.7. Las wavelets pueden decir exactamente eso: "hay energía a esta frecuencia, pero solo aquí".
+
+El problema del gráfico que ves es que las curvas sintéticas que generé no ilustran bien esto — parecen periódicas globalmente. Lo que debería mostrar son curvas que son planas la mayor parte del tiempo con transientes locales abruptos en momentos concretos.
+
+La frontera precisa es:
+
+Fourier es óptimo cuando la estructura de frecuencias es estacionaria — igual en todo el dominio. Wavelets son óptimas cuando las frecuencias son no estacionarias — aparecen y desaparecen localmente.
+
+Penalización en b-splines: \int_\mathcal{T} \left[x_i''(t)\right]^2 dt
+
+ourier — penalización sobre la energía en frecuencias altas:
+min⁡ci∑j=1mi[yij−∑kcikϕk(tij)]2+λ∑kωk2 cik2\min_{\mathbf{c}_i} \sum_{j=1}^{m_i} \left[y_{ij} - \sum_k c_{ik} \phi_k(t_{ij})\right]^2 + \lambda \sum_k \omega_k^2\, c_{ik}^2ci​min​j=1∑mi​​[yij​−k∑​cik​ϕk​(tij​)]2+λk∑​ωk2​cik2​
+Donde ωk\omega_k
+ωk​ es la frecuencia de la kk
+k-ésima función base. Como ϕk′′(t)=−ωk2ϕk(t)\phi_k''(t) = -\omega_k^2 \phi_k(t)
+ϕk′′​(t)=−ωk2​ϕk​(t), penalizar ∫[x′′]2\int [x'']^2
+∫[x′′]2 equivale a penalizar los coeficientes de las frecuencias altas — la penalización es
+diagonal en la base de Fourier, lo que hace el problema muy eficiente computacionalmente.
+
+Wavelets — umbralización de coeficientes, no penalización de derivadas:
+min⁡ci∑j=1mi[yij−∑j,kcijk ψjk(tij)]2+λ∑j,k∣cijk∣\min_{\mathbf{c}_i} \sum_{j=1}^{m_i} \left[y_{ij} - \sum_{j,k} c_{ijk}\, \psi_{jk}(t_{ij})\right]^2 + \lambda \sum_{j,k} |c_{ijk}|ci​min​j=1∑mi​​​yij​−j,k∑​cijk​ψjk​(tij​)​2+λj,k∑​∣cijk​∣
+Donde ψjk(t)=2j/2ψ(2jt−k)\psi_{jk}(t) = 2^{j/2}\psi(2^j t - k)
+ψjk​(t)=2j/2ψ(2jt−k) son las wavelets a escala jj
+j y traslación kk
+k. La penalización es una
+norma L1L^1
+L1 sobre los coeficientes
+ — produce soluciones sparse, poniendo a cero los coeficientes pequeños. Es lo que se conoce como soft thresholding o LASSO funcional.
+ 
+:::
+
+
+
+
+::: {.columns}
+::: {.column width="33%"}
+
+
+### B-splines
+
+```{r fig-bspline-ex2}
+#| fig-height: 6
+# Show B-spline basis functions
+K <- 7
+spline_basis <- create.bspline.basis(rangeval = c(1, 18),
+                                     nbasis   = K,
+                                     norder   = 4)
+basis_vals <- eval.basis(ages, spline_basis)
+
+basis_df <- as.data.frame(basis_vals) |>
+  setNames(paste0("phi[", 1:K, "]")) |>
+  mutate(age = ages) |>
+  pivot_longer(-age, names_to = "basis", values_to = "value")
+
+ggplot(basis_df, aes(age, value, color = basis)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_viridis_d(option = "turbo", name = "Basis fn") +
+  labs(title = paste0("B-spline basis: K = ", K, " functions"),
+       subtitle = "Each curve is one φ_k(t); order 4 (cubic)",
+       x = "Age (years)", y = expression(phi[k](t))) +
+  theme_fda()
+# ggplot(tb_curves |> filter(subject %in% unique(tb_curves$subject)[1:6]),
+#        aes(age, height, color = subject)) +
+#   geom_line(linewidth = 1) +
+#   scale_color_viridis_d(guide = "none") +
+#   labs(title = "B-splines",
+#        subtitle = "Non-periodic smooth curves",
+#        x = "Age", y = "Height") +
+#   theme_fda()+
+#   theme(plot.subtitle = element_text(size=11))
+```
+
+::: {style="font-size: 75%;"}
+
+
+**Use when:** non-periodic process, local smoothness matters, non-uniform spacing.  
+*Growth curves, biomarker profiles, survival curves.*
+
+:::
+
+:::
+
+::: {.column width="33%"}
+
+### Fourier
+
+```{r fig-fourier-ex2}
+#| fig-height: 6
+t <- seq(0, 1, length.out = 1000)
+T_period <- 1
+
+fourier_df <- map_dfr(1:3, function(r) {
+  bind_rows(
+    tibble(t = t,
+           y = sin(2 * pi * r * t / T_period),
+           label = paste0("sin(", 2*r, "πt)")),
+    tibble(t = t,
+           y = cos(2 * pi * r * t / T_period),
+           label = paste0("cos(", 2*r, "πt)"))
+  )
+}) |>
+  bind_rows(tibble(t = t, y = 1, label = "φ₁(t) = 1"))
+
+ggplot(fourier_df, aes(t, y, color = label)) +
+  geom_line(linewidth = 0.9) +
+  scale_color_viridis_d(option = "turbo", name = NULL) +
+  labs(title = "Fourier basis functions",
+       subtitle = "1 constant + pairs of sin/cos at increasing frequencies",
+       x = "t", y = "φ_k(t)") +
+  theme_fda()
+
+# t_hr <- seq(0, 24, length.out = 200)
+# set.seed(7)
+# fourier_ex <- data.frame(
+#   t = rep(t_hr, 4),
+#   y = c(
+#     2 + sin(2*pi*t_hr/24) + 0.5*sin(4*pi*t_hr/24) + rnorm(200,0,0.1),
+#     1.5 + 0.8*sin(2*pi*t_hr/24 + 0.5) + rnorm(200,0,0.1),
+#     2.2 + sin(2*pi*t_hr/24 - 0.3) + 0.3*sin(6*pi*t_hr/24) + rnorm(200,0,0.1),
+#     1.8 + 0.9*sin(2*pi*t_hr/24 + 1) + rnorm(200,0,0.1)
+#   ),
+#   subject = rep(paste0("s", 1:4), each = 200)
+# )
+# ggplot(fourier_ex, aes(t, y, color = subject)) +
+#   geom_line(linewidth = 1) +
+#   scale_color_viridis_d(guide = "none") +
+#   labs(title = "Fourier basis",
+#        subtitle = "Periodic processes",
+#        x = "Hour of day", y = "Activity") +
+#   theme_fda() +
+#   theme(plot.subtitle = element_text(size=11))
+```
+
+::: {style="font-size: 75%;"}
+
+
+**Use when:** process is periodic.  
+*Circadian rhythms, ECG waveforms, actigraphy over days.*
+
+:::
+
+:::
+
+::: {.column width="33%"}
+
+### Wavelets
+
+```{r fig-wavelet-ex2}
+#| fig-height: 6
+# t_eeg <- seq(0, 1, length.out = 200)
+# set.seed(3)
+# wav_ex <- data.frame(
+#   t = rep(t_eeg, 3),
+#   y = c(
+#     0.3*sin(20*pi*t_eeg) + 0.8*(t_eeg > 0.3 & t_eeg < 0.4) + rnorm(200,0,0.05),
+#     0.3*sin(20*pi*t_eeg) + 0.6*(t_eeg > 0.5 & t_eeg < 0.65) + rnorm(200,0,0.05),
+#     0.3*sin(20*pi*t_eeg) + rnorm(200,0,0.05)
+#   ),
+#   subject = rep(paste0("s", 1:3), each = 200)
+# )
+# ggplot(wav_ex, aes(t, y, color = subject)) +
+#   geom_line(linewidth = 1) +
+#   scale_color_viridis_d(guide = "none") +
+#   labs(title = "Wavelets",
+#        subtitle = "Localized transient features",
+#        x = "Time (s)", y = "Signal") +
+#   theme_fda() +
+#   theme(plot.subtitle = element_text(size=11))
+t <- seq(0, 1, length.out = 1000)
+
+psi_haar <- function(t) {
+  ifelse(t >= 0 & t < 0.5,  1,
+  ifelse(t >= 0.5 & t < 1, -1, 0))
+}
+
+params <- list(
+  list(j = 0, k = 0, label = "ψ(t) — mother"),
+  list(j = 1, k = 0, label = "j=1, k=0"),
+  list(j = 1, k = 1, label = "j=1, k=1"),
+  list(j = 2, k = 1, label = "j=2, k=1"),
+  list(j = 2, k = 2, label = "j=2, k=2")
+)
+
+df_wav_basis <- map_dfr(params, function(p) {
+  tibble(
+    t     = t,
+    y     = 2^(p$j / 2) * psi_haar(2^p$j * t - p$k),
+    label = p$label
+  )
+})
+
+ggplot(df_wav_basis, aes(t, y, color = label)) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey70", linewidth = 0.3) +
+  scale_color_viridis_d(option = "turbo", name = NULL) +
+  labs(
+    title    = "Haar wavelet basis functions ψ_{j,k}(t)",
+    subtitle = expression(psi[j*","*k](t) == 2^{j/2}~psi(2^j~t - k)),
+    x = "t", y = expression(psi[j*","*k](t))
+  ) +
+  theme_fda() +
+  theme(legend.position = "right")
+```
+
+::: {style="font-size: 75%;"}
+
+**Use when:** local, transient features matter.  
+*EEG spikes, accelerometry bursts, gene expression pulses.*
+
+:::
+
+:::
+:::
+
+---
+
+## Fixed bases
+
+
+
+```{r}
+#| fig-height: 4
+library(fda)
+
+t    <- seq(0, 1, length.out = 200)
+ages <- growth$age
+
+# ── Individuo: primera niña del Berkeley Growth Study
+y_obs  <- growth$hgtf[, 1]
+t_obs  <- ages
+
+# ── 1. B-SPLINES ─────────────────────────────────────────────────────────────
+K_bs       <- 10
+bs_basis   <- create.bspline.basis(rangeval = range(t_obs), nbasis = K_bs, norder = 4)
+bs_fdpar   <- fdPar(bs_basis, Lfdobj = 2, lambda = 1e-1)
+bs_smooth  <- smooth.basis(t_obs, y_obs, bs_fdpar)
+bs_fitted  <- eval.fd(t_obs, bs_smooth$fd)
+
+df_bs <- bind_rows(
+  tibble(t = t_obs, y = y_obs,              type = "Observed"),
+  tibble(t = t_obs, y = as.numeric(bs_fitted), type = "B-spline fit")
+)
+
+p_bs <- ggplot(df_bs |> filter(type == "Observed"),
+               aes(t, y)) +
+  geom_point(size = 1.8, color = "grey50", alpha = 0.8) +
+  geom_line(data = df_bs |> filter(type == "B-spline fit"),
+            aes(t, y), color = "#2a9d8f", linewidth = 1.3) +
+  labs(title = "B-splines",
+       subtitle = expression(hat(x)(t) == sum(c[k]*B[k](t), k=1, K)),
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda()
+
+# ── 2. FOURIER ────────────────────────────────────────────────────────────────
+# Fourier funciona mejor con datos periódicos — usamos señal circadiana simulada
+set.seed(7)
+t_fourier  <- seq(0, 24, length.out = 100)
+y_fourier  <- 2 + sin(2*pi*t_fourier/24) +
+              0.4*sin(4*pi*t_fourier/24) +
+              0.2*cos(6*pi*t_fourier/24) +
+              rnorm(100, 0, 0.12)
+
+fou_basis  <- create.fourier.basis(rangeval = c(0, 24), nbasis = 9)
+fou_fdpar  <- fdPar(fou_basis, lambda = 1e-4)
+fou_smooth <- smooth.basis(t_fourier, y_fourier, fou_fdpar)
+fou_fitted <- eval.fd(t_fourier, fou_smooth$fd)
+
+df_fou <- bind_rows(
+  tibble(t = t_fourier, y = y_fourier,              type = "Observed"),
+  tibble(t = t_fourier, y = as.numeric(fou_fitted), type = "Fourier fit")
+)
+
+p_fou <- ggplot(df_fou |> filter(type == "Observed"), aes(t, y)) +
+  geom_point(size = 1.8, color = "grey50", alpha = 0.8) +
+  geom_line(data = df_fou |> filter(type == "Fourier fit"),
+            aes(t, y), color = "#e63946", linewidth = 1.3) +
+  labs(title = "Fourier",
+       subtitle = expression(hat(x)(t) == sum(c[k]*phi[k](t), k=1, K)),
+       x = "Hour of day", y = "Activity") +
+  theme_fda()
+
+# ── 3. WAVELETS ───────────────────────────────────────────────────────────────
+# Señal con transientes locales — reconstrucción por umbralización
+library(wavethresh)
+
+# Señal con bursts locales
+set.seed(42)
+n      <- 256   # wavethresh necesita potencia de 2
+t_wav  <- seq(0, 1, length.out = n)
+y_wav  <- 0.05 * rnorm(n) +
+          1.2  * exp(-((t_wav - 0.20)^2) / (2*0.03^2)) * sin(2*pi*18*t_wav) +
+          1.0  * exp(-((t_wav - 0.65)^2) / (2*0.04^2)) * sin(2*pi*10*t_wav)
+
+# Descomposición wavelet + umbralización suave
+wt        <- wd(y_wav, filter.number = 4, family = "DaubExPhase")
+wt_thresh <- threshold(wt, policy = "universal", type = "soft")
+y_recon   <- wr(wt_thresh)
+
+df_wav2 <- bind_rows(
+  tibble(t = t_wav, y = y_wav,    type = "Observed"),
+  tibble(t = t_wav, y = y_recon,  type = "Wavelet fit")
+)
+
+p_wav <- ggplot(df_wav2 |> filter(type == "Observed"), aes(t, y)) +
+  geom_line(color = "grey70", linewidth = 0.5, alpha = 0.8) +
+  geom_line(data = df_wav2 |> filter(type == "Wavelet fit"),
+            aes(t, y), color = "#e9c46a", linewidth = 1.3) +
+  labs(title = "Wavelets",
+       subtitle = expression(hat(x)(t) == sum(c[jk]*psi[jk](t), j,k)),
+       x = "Time (s)", y = "Signal") +
+  theme_fda()
+
+# ── Combinar ──────────────────────────────────────────────────────────────────
+(p_bs | p_fou | p_wav) +
+  plot_annotation(
+    title    = "Representing data in each basis",
+    subtitle = "Points/line: observed data — colored line: basis reconstruction",
+    theme    = theme(
+      plot.title    = element_text(face = "bold", size = 15, color = "#0f1f3d"),
+      plot.subtitle = element_text(size = 11, color = "grey40")
+    )
+  )
+```
+
+
+
+---
+
+## Fixed bases
+
+::: {style="font-size: 80%;"}
+
+$$\min_{\mathbf{c}_i} \; \sum_{j=1}^{m_i} \left[y_{ij} - \sum_k c_{ik}\phi_k(t_{ij})\right]^2 + \; \lambda *Penalty(ci)$$
+
+:::
+
+
+
+```{r}
+#| fig-height: 4
+
+# Use subject 1 (girl), add noise to simulate realistic observations
+set.seed(42)
+subject1 <- girls[, 1]
+noisy_obs <- subject1 + rnorm(length(ages), 0, 2.5)
+
+lambdas    <- c(1e-4, 1e0, 1e4)
+lambda_lab <- c("λ very small\n(interpolation)", "λ moderate\n(good fit)", "λ very large\n(over-smoothed)")
+colors     <- c("#e63946", "#2a9d8f", "#e9c46a")
+
+# Fit three smooths
+fitted_list <- lapply(lambdas, function(lam) {
+  fdPar_obj  <- fdPar(spline_basis, Lfdobj = 2, lambda = lam)
+  sm         <- smooth.basis(ages, noisy_obs, fdPar_obj)
+  fitted_vals <- eval.fd(ages, sm$fd)
+  tibble(age = ages, fitted = as.numeric(fitted_vals))
+})
+
+obs_df <- tibble(age = ages, y = noisy_obs)
+
+plots <- lapply(seq_along(lambdas), function(k) {
+  ggplot(obs_df, aes(age, y)) +
+    geom_point(size = 1.8, alpha = 0.7, color = "grey40") +
+    geom_line(data = fitted_list[[k]],
+              aes(age, fitted), color = colors[k], linewidth = 1.4) +
+    labs(title = lambda_lab[k], x = "Age", y = "Height") +
+    theme_fda() +
+    theme(plot.title = element_text(size = 12, color = colors[k]))
+})
+
+(plots[[1]] | plots[[2]] | plots[[3]])
+```
+
+
+::: {.notes}
+
+$\lambda$ is typically selected by **GCV** (generalized cross-validation) or leave-one-out CV, balancing fit quality against smoothness.
+
+:::
+
+---
+
+## FPCA
+
+> Fixed bases are chosen by the analyst. FPCA lets the data choose
+
+
+::: {style="font-size: 87%;"}
+
+**Classical PCA** — find the unit vector $\mathbf{v}_1 \in \mathbb{R}^p$ 
+maximizing the variance of scalar projections:
+
+$$\widehat{\mathbf{v}}_1 = \underset{\|\mathbf{v}\|=1}{\arg\max} \; \text{Var}\left(\mathbf{x}_i^\top \mathbf{v}\right) = \underset{\|\mathbf{v}\|=1}{\arg\max} \; \text{Var}\left(\sum_{j=1}^p x_{ij} v_j\right) = \underset{\|\mathbf{v}\|=1}{\arg\max} \; \text{Var}\left( \langle \mathbf{x}_i^\top ,\mathbf{v} \rangle_{\mathbb{R}^p}\right)$$
+
+::: {.fragment}
+
+::: {.callout-warning icon=false}
+## Projection = inner product
+
+$\mathbf{x}_i^\top \mathbf{v}$ is the **inner product in $\mathbb{R}^p$**: the projection of the individual $i$ into the Principal Component $\mathbf{v}$
+
+:::
+
+:::
+
+::: {.fragment}
+
+**FPCA** — find the unit function $\phi_1(t) \in L^2(T)~$ maximizing the variance of functional projections:
+
+$$\widehat{\phi}_1 = \underset{\|\phi\|=1}{\arg\max} \; \text{Var}\left(\langle x_i, \phi \rangle\right) = \underset{\|\phi\|=1}{\arg\max} \; \text{Var}\left(\int_T x_i(t) \,\phi(t)\,dt\right)$$
+
+:::
+
+::: {.fragment}
+
+::: {.callout-note icon=false}
+## The only thing that changes
+The inner product — from a **finite sum** to an **integral**. The rest is structurally identical: just replacing  projection the inner product by $\langle x_i, \phi \rangle_{L^2} = \int_T x_i(t) \,\phi(t)\,dt$
+
+
+:::
+
+:::
+
+:::
+
+::: {.notes}
+The analogy with classical PCA is exact and worth dwelling on. In PCA, 
+we project each observation onto a direction in R^p — a vector — and 
+maximize the variance of those scalar projections. The projection is a 
+dot product: a sum over p coordinates.
+
+In FPCA we do the same thing, but our observations are functions and our 
+components are functions. The projection is now an integral — the L2 inner 
+product. The score xi_{ik} tells you how much of component phi_k is present 
+in subject i's curve, exactly as a PCA score tells you how much of 
+eigenvector v_k is present in subject i's vector.
+
+The solution is also structurally identical: in PCA you solve the 
+eigenproblem for the covariance matrix Sigma. In FPCA you solve the 
+eigenproblem for the covariance operator C — which is an integral operator 
+instead of a matrix, but the math is the same.
+:::
+
+
+
+::: {.notes}
+
+Hemos visto que podemos representar cualquier curva en una base fija — B-splines, Fourier, wavelets. Pero estas bases tienen un problema: las elegimos nosotros, antes de ver los datos, basándonos en supuestos sobre el proceso. No hay ninguna garantía de que sean eficientes para describir la variabilidad que realmente existe en nuestra muestra.
+
+La pregunta natural es: ¿existe una base óptima — una que capture la máxima variabilidad de los datos con el mínimo número de componentes?
+
+La respuesta es sí, y se llama FPCA.
+:::
+
+---
+
+## The Karhunen-Loève Theorem
+
+::: {.columns}
+::: {.column width="55%"}
+
+::: {style="font-size: 85%;"}
+
+Any square-integrable centered stochastic process $X(t)$ admits the decomposition:
+
+$$x_i(t) = \sum_{k=1}^{\infty} \xi_{ik}\, \phi_k(t) \approx \sum_{k=1}^{K} \xi_{ik}\, \phi_k(t)$$
+
+- $\phi_k(t)$ — **orthonormal eigenFUNCTIONS** of $C(s, t)$.
+- $\xi_{ik} = \langle x_i , \phi_k \rangle = \int x_i(t) \phi_k(t) dt \quad$ **scores** of subject $i$ on component $k$
+- $\text{Cov}(\xi_{ik}, \xi_{il}) = \lambda_k\, \mathbf{1}_{k=l}\quad$: scores are **uncorrelated**
+- $\lambda_1 \geq \lambda_2 \geq \ldots \geq 0\quad$ **eigenvalues**, ordered by variance explained
+
+
+
+
+:::
+
+:::
+
+::: {.column width="45%"}
+
+```{r fig-scree}
+#| fig-height: 5
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+
+bs_basis <- create.bspline.basis(rangeval = range(ages),
+                                  nbasis = 15, norder = 4)
+bs_fdpar <- fdPar(bs_basis, Lfdobj = 2, lambda = 1e-1)
+girls_fd <- smooth.basis(ages, girls, bs_fdpar)$fd
+fpca_res <- pca.fd(girls_fd, nharm = 4)
+pve      <- round(fpca_res$varprop * 100, 1)
+
+scree_df <- tibble(
+  k   = 1:4,
+  pve = pve,
+  cum = cumsum(pve)
+)
+
+ggplot(scree_df, aes(k, pve)) +
+  geom_col(fill = "#1e3a5f", alpha = 0.85, width = 0.6) +
+  geom_line(aes(y = cum), color = "#e63946",
+            linewidth = 1.2, linetype = "dashed") +
+  geom_point(aes(y = cum), color = "#e63946", size = 3) +
+  geom_text(aes(y = pve, label = paste0(pve, "%")),
+            vjust = -0.5, size = 3.8,
+            color = "#0f1f3d", fontface = "bold") +
+  scale_y_continuous(
+    name     = "Variance explained (%)",
+    sec.axis = sec_axis(~., name = "Cumulative (%)")
+  ) +
+  scale_x_continuous(breaks = 1:4,
+                     labels = paste0("PC", 1:4)) +
+  labs(title    = "Scree plot — Berkeley Growth Study",
+       subtitle = "Bars: per component    Dashed: cumulative",
+       x = NULL) +
+  theme_fda()
+```
+
+:::
+:::
+
+::: {style="font-size: 85%;"}
+
+::: {.callout-important icon=false}
+## Three key consequences
+
+**1. Optimality** — no other basis of $K$ functions captures more total variance. Functional analogue of the Eckart-Young theorem.
+
+**2. Dimensionality reduction** — each subject is represented by $(\xi_{i1}, \ldots, \xi_{iK}) \in \mathbb{R}^K$. A function compressed into $K$ numbers.
+
+**3. Variance explained** — $\lambda_k / \sum_j \lambda_j$, exactly as in classical PCA.
+:::
+
+:::
+
+
+::: {.notes}
+The Karhunen-Loève theorem is the theoretical backbone of FPCA. 
+The decomposition always exists for any square-integrable process — 
+it is not an approximation, it is exact in the limit of infinitely 
+many components.
+
+The three consequences are worth emphasizing separately.
+
+First, optimality: the eigenfunctions are the best possible basis 
+for this particular dataset. Any other K functions — B-splines, 
+Fourier, anything — will explain less variance with K components. 
+This is the functional version of the Eckart-Young theorem, which 
+says that the SVD gives the best low-rank approximation of a matrix.
+
+Second, dimensionality reduction: this is what makes FPCA practically 
+useful. We started with functions — infinite-dimensional objects. 
+We end up with a vector of K numbers per subject. Those numbers can 
+be fed into any standard multivariate method: clustering, regression, 
+classification, survival analysis.
+
+Third, variance explained: the interpretation is identical to classical 
+PCA. The scree plot on the right shows that in the Berkeley Growth Study, 
+the first component alone explains the vast majority of variance — 
+most of the between-girl variability is simply about overall height level.
+:::
+
+
+::: {.notes}
+The Karhunen-Loève theorem guarantees that the decomposition exists and 
+is optimal. The key message is that each subject i is now represented by 
+a vector of K scores — a finite-dimensional summary of an infinite-dimensional 
+object. Those scores inherit the geometry of L2: they are uncorrelated, 
+and the variance of the k-th score is exactly the k-th eigenvalue.
+
+The scree plot shows how many components are needed. In the Berkeley Growth 
+Study, the first component alone explains most of the variance — height 
+trajectories are mostly determined by overall size, with subsequent 
+components capturing progressively subtler features like growth timing.
+:::
+
+---
+
+## FPCA
+
+
+```{r fig-fpca-full}
+#| fig-height: 4.5
+#| fig-cap: "FPCA-based reconstruction"
+mu_t  <- eval.fd(ages, mean.fd(girls_fd))
+efuns <- eval.fd(ages, fpca_res$harmonics)
+pve   <- round(fpca_res$varprop * 100, 1)
+
+# Panel 1: eigenfunctions
+ef_df <- as.data.frame(efuns[, 1:3]) |>
+  setNames(paste0("PC", 1:3, " (", pve[1:3], "%)")) |>
+  mutate(age = ages) |>
+  pivot_longer(-age, names_to = "component", values_to = "value")
+
+p1 <- ggplot(ef_df, aes(age, value, color = component)) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey60", linewidth = 0.4) +
+  geom_line(linewidth = 1.3) +
+  scale_color_manual(
+    values = c("#e63946", "#2a9d8f", "#457b9d"),
+    name = NULL
+  ) +
+  labs(
+    title    = "Eigenfunctions",
+    subtitle = "Each captures a mode of variation",
+    x = "Age (years)",
+    y = expression(phi[k](t))
+  ) +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+# Panel 2: score plot
+scores_df <- as.data.frame(fpca_res$scores[, 1:3]) |>
+  setNames(paste0("PC", 1:3)) |>
+  mutate(subject = 1:54)
+
+idx_high <- which.max(scores_df$PC1)
+idx_low  <- which.min(scores_df$PC1)
+
+p2 <- ggplot(scores_df, aes(PC1, PC2)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey70") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey70") +
+  geom_point(size = 2.5, color = "#1e3a5f", alpha = 0.75) +
+  geom_point(data = scores_df[idx_high, ],
+             aes(PC1, PC2), size = 4, color = "#e63946") +
+  geom_point(data = scores_df[idx_low, ],
+             aes(PC1, PC2), size = 4, color = "#2a9d8f") +
+  annotate("text",
+           x = scores_df$PC1[idx_high] - 0.5,
+           y = scores_df$PC2[idx_high] - 3,
+           label = "Tall", color = "#e63946",
+           fontface = "bold", size = 3.5) +
+  annotate("text",
+           x = scores_df$PC1[idx_low] + 12,
+           y = scores_df$PC2[idx_low] - 3,
+           label = "Short", color = "#2a9d8f",
+           fontface = "bold", size = 3.5, hjust = 1) +
+  labs(
+    title    = "Score plot: PC1 vs PC2",
+    x = paste0("Score 1 (", pve[1], "% var)"),
+    y = paste0("Score 2 (", pve[2], "% var)")
+  ) +
+  theme_fda()
+
+# Panel 3: reconstruction
+recon <- function(idx, npc = 3) {
+  as.numeric(mu_t) +
+    rowSums(sapply(1:npc, function(k)
+      fpca_res$scores[idx, k] * efuns[, k]))
+}
+
+recon_df <- bind_rows(
+  tibble(age = ages, y = as.numeric(mu_t), type = "Mean"),
+  tibble(age = ages, y = recon(idx_high),  type = "High PC1 score"),
+  tibble(age = ages, y = recon(idx_low),   type = "Low PC1 score")
+)
+
+p3 <- ggplot(recon_df, aes(age, y, color = type, linewidth = type)) +
+  geom_line() +
+  scale_color_manual(
+    values = c(
+      "Mean"           = "#0f1f3d",
+      "High PC1 score" = "#e63946",
+      "Low PC1 score"  = "#2a9d8f"
+    ),
+    name = NULL
+  ) +
+  scale_linewidth_manual(
+    values = c(
+      "Mean"           = 1.5,
+      "High PC1 score" = 1.2,
+      "Low PC1 score"  = 1.2
+    ),
+    name = NULL
+  ) +
+  labs(
+    title    = "Reconstruction (3 PC)",
+    subtitle = expression(
+      hat(x)[i](t) == mu(t) + xi[i1]*phi[1](t) + xi[i2]*phi[2](t)
+    ),
+    x = "Age (years)",
+    y = "Height (cm)"
+  ) +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+idx_high <- which.max(scores_df$PC2)
+idx_low  <- which.min(scores_df$PC2)
+
+recon_df <- bind_rows(
+  tibble(age = ages, y = as.numeric(mu_t), type = "Mean"),
+  tibble(age = ages, y = recon(idx_high),  type = "High PC2 score"),
+  tibble(age = ages, y = recon(idx_low),   type = "Low PC2 score")
+)
+
+p4 <- ggplot(recon_df, aes(age, y, color = type, linewidth = type)) +
+  geom_line() +
+  scale_color_manual(
+    values = c(
+      "Mean"           = "#0f1f3d",
+      "High PC2 score" = "#e63946",
+      "Low PC2 score"  = "#2a9d8f"
+    ),
+    name = NULL
+  ) +
+  scale_linewidth_manual(
+    values = c(
+      "Mean"           = 1.5,
+      "High PC2 score" = 1.2,
+      "Low PC2 score"  = 1.2
+    ),
+    name = NULL
+  ) +
+  guides(color = "none", linewidth = "none") +
+  labs(
+    # title    = "Reconstruction (2 PC)",
+    # subtitle = expression(
+    #   hat(x)[i](t) == mu(t) + xi[i1]*phi[1](t) + xi[i2]*phi[2](t)
+    # ),
+    x = "Age (years)",
+    y = "Height (cm)"
+  ) +
+  theme_fda() +
+  theme(plot.title = element_blank(),
+        plot.subtitle = element_blank())
+
+# Combine
+(p1 | p2 | p3) +
+  plot_layout(widths = c(2, 3, 3)) +
+  plot_annotation(
+    title = "FPCA in practice - Berkeley Growth Study",
+    theme = theme_fda())
+```
+
+::: {.notes}
+The three panels tell a complete story.
+
+Panel 1 — the eigenfunctions. The first eigenfunction is roughly flat and 
+positive — it captures overall height level. A girl with a high score on 
+PC1 is simply taller than average at all ages. The second eigenfunction 
+changes sign around age 12-13 — it captures the contrast between girls 
+who grow fast early vs those who grow more in adolescence. The third 
+captures finer variation around the pubertal growth spurt.
+
+Panel 2 — the score plot. Each girl is now a point in R^K. The 
+horizontal axis separates tall from short girls. The vertical axis 
+separates early growers from late growers. This is the dimensionality 
+reduction — from a function to two numbers, with interpretable meaning.
+
+Panel 3 — reconstruction. The red and green curves are reconstructed 
+from just two components plus the mean. The approximation is already 
+very close to the observed trajectories, which confirms that two 
+components capture most of the clinically relevant variability.
+
+:::
+
+---
+
+## FPCA
+
+::: {.columns}
+::: {.column width="55%"}
+
+::: {style="font-size: 90%;"}
+
+The eigenfunction problem to solve:
+
+$$\int_T C(s,t)\, \phi_k(s)\, ds = \lambda_k\, \phi_k(t)$$
+
+The functional analogue of $\Sigma \mathbf{v} = \lambda \mathbf{v}\quad$ in classical PCA.
+
+<br>
+
+::: {.fragment}
+
+**Step 1** — Estimate
+
+$$\widehat{C}(s,t) = \frac{1}{n-1}\sum_{i=1}^n \left[\widehat{x}_i(s) - \widehat{\mu}(s)\right]\left[\widehat{x}_i(t) - \widehat{\mu}(t)\right]$$
+
+from the $n$ smoothed curves.
+
+:::
+
+::: {.fragment}
+
+**Step 2 — Discretize** the integral equation:
+$\widehat{\mathbf{C}}\, \boldsymbol{\phi}\, \Delta t = \lambda\, \boldsymbol{\phi}$
+
+:::
+
+::: {.fragment}
+
+**Step 3 — Spectral decomposition** of $\widehat{\mathbf{C}}$:
+$\widehat{\mathbf{C}} = \mathbf{V}\mathbf{\Lambda}\mathbf{V}^\top$
+
+:::
+
+:::
+
+::: {.notes}
+The key message here is that computing eigenfunctions is not magic —
+it is a standard matrix eigendecomposition applied to the discretized
+covariance surface. The functional setting adds one step at the beginning
+(smoothing + covariance estimation) and one at the end (interpreting
+eigenvectors as functions), but the core linear algebra is identical
+to classical PCA.
+
+In R, pca.fd() handles all three steps internally. The only decisions
+you make are how many basis functions to use for smoothing, and how
+many components to retain.
+
+:::
+
+
+:::
+
+::: {.column width="45%"}
+
+::: {style="font-size: 75%;"}
+
+| | Classical PCA | FPCA |
+|--|--------------|------|
+| Object | $\mathbf{x}_i \in \mathbb{R}^p$ | $x_i(t) \in L^2(T)$ |
+| Component | $\mathbf{v}_k \in \mathbb{R}^p$ | $\phi_k(t) \in L^2(T)$ |
+| Inner product | $\sum_j x_{ij} v_j$ | $\int x_i(t)\phi_k(t)\,dt$ |
+| Score | $\xi_{ik} = \mathbf{x}_i^\top \mathbf{v}_k$ | $\xi_{ik} = \langle x_i, \phi_k \rangle_{L^2}$ |
+| Principal Component | eigenvector of $\Sigma$ | eigenfunction of $C(s,t)$ |
+| # components | at most $p$ | countably infinite |
+
+:::
+
+:::
+
+:::
+
+---
+
+
+## Derivatives as data: beyond mean/covariance
+
+> Sometimes the signal is not in the curve itself — but in its rate of change.
+
+::: {.columns}
+::: {.column width="33%"}
+
+::: {style="font-size: 72%;"}
+
+Once $x_i(t)$ is represented in a basis, derivatives are
+**free**
+
+$$x_i'(t) = \frac{d}{dt}\sum_k c_{ik}\phi_k(t) = \sum_k c_{ik}\phi_k'(t)$$
+
+This means you can treat **velocity** and **acceleration** as
+functional observations — with their own mean and covariance.
+
+**When are derivatives more informative?**
+
+- The raw curve is dominated by a global trend that masks local features
+- The scientific question is about **rates of change**, not levels
+- The curve is very smooth and the interesting signal is in its curvature
+
+:::
+
+:::
+
+::: {.column width="67%"}
+
+```{r fig-derivatives}
+#| fig-height: 6.6
+
+library(fda)
+library(tidyverse)
+library(patchwork)
+library(fda.usc)
+data("tecator")
+# tecator: 215 meat samples
+# absorp: 215 x 100 matrix of NIR absorbance curves
+# endpoints: wavelengths 850-1050 nm
+
+wavelengths <- seq(850, 1050, length.out = 100)
+absorp      <- tecator$absorp
+
+# Smooth with B-splines
+bs_basis <- create.bspline.basis(
+  rangeval = range(wavelengths),
+  nbasis   = 40,
+  norder   = 6   # order 6 -> smooth enough for 2nd derivative
+)
+bs_fdpar <- fdPar(bs_basis, Lfdobj = 4, lambda = 1e-4)
+absorp_fd <- smooth.basis(wavelengths, t(absorp$data), bs_fdpar)$fd
+
+# Evaluate: curve, 1st and 2nd derivative
+x0 <- eval.fd(wavelengths, absorp_fd, Lfd = 0)
+x1 <- eval.fd(wavelengths, absorp_fd, Lfd = 1)
+x2 <- eval.fd(wavelengths, absorp_fd, Lfd = 2)
+
+# Select a subsample for visibility
+idx <- sample(1:215, 40)
+
+make_df <- function(mat, idx, varname) {
+  as.data.frame(mat[, idx]) |>
+    setNames(paste0("s", idx)) |>
+    mutate(wavelength = wavelengths) |>
+    pivot_longer(-wavelength,
+                 names_to = "subject",
+                 values_to = varname)
+}
+
+df0 <- make_df(x0, idx, "y")
+df1 <- make_df(x1, idx, "y")
+df2 <- make_df(x2, idx, "y")
+
+# Fat content for coloring
+fat <- tecator$y[, 1]   # % fat
+
+color_df <- tibble(
+  subject = paste0("s", idx),
+  fat     = fat[idx]
+)
+
+add_fat <- function(df) left_join(df, color_df, by = "subject")
+
+p0 <- ggplot(add_fat(df0), aes(wavelength, y,
+                                group = subject, color = fat)) +
+  geom_line(alpha = 0.5, linewidth = 0.5) +
+  scale_color_viridis_c(option = "magma", name = "Fat %") +
+  labs(title    = "Raw absorbance  x(t)",
+       subtitle = "Curves look similar",
+       x = "Wavelength (nm)", y = "Absorbance") +
+  theme_fda() +
+  theme(legend.position = "none")
+
+p1 <- ggplot(add_fat(df1), aes(wavelength, y,
+                                group = subject, color = fat)) +
+  geom_line(alpha = 0.5, linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey60", linewidth = 0.3) +
+  scale_color_viridis_c(option = "magma", name = "Fat %") +
+  labs(title    = "First derivative  x'(t)",
+       subtitle = "Rates of change begin to separate them",
+       x = "Wavelength (nm)", y = "x'(t)") +
+  theme_fda() +
+  theme(legend.position = "none")
+
+p2 <- ggplot(add_fat(df2), aes(wavelength, y,
+                                group = subject, color = fat)) +
+  geom_line(alpha = 0.5, linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey60", linewidth = 0.3) +
+  scale_color_viridis_c(option = "magma", name = "Fat %",
+                        guide = guide_colorbar(
+                          barwidth  = 0.8,
+                          barheight = 6
+                        )) +
+  labs(title    = "Second derivative  x''(t)",
+       subtitle = "Peaks reveal wavelengths linked to fat",
+       x = "Wavelength (nm)", y = "x''(t)") +
+  theme_fda() +
+  theme(legend.position = "right")
+
+(p0 | p1 | p2) +
+  plot_annotation(
+    title    = "Tecator dataset: NIR spectrometry of meat samples",
+    theme = theme_fda()
+  )
+```
+
+:::
+:::
+
+::: {.notes}
+This is one of the most practically useful features of FDA that has
+no clean analogue in multivariate or longitudinal analysis.
+
+In multivariate analysis, you observe x_{ij} at fixed time points.
+You can compute finite differences as a proxy for derivatives, but
+these are noisy and depend heavily on the spacing of observations.
+
+In FDA, once you have a smooth basis representation, differentiation
+is exact and analytic — you just differentiate the basis functions,
+which have known closed-form derivatives. The result is a new
+functional object that you can analyze exactly like the original curves.
+
+The spectrometry example is particularly clean: the raw absorbance
+curves all look similar and are hard to distinguish. The second
+derivative reveals peaks at specific wavelengths that correspond
+to chemical bonds — the features that actually predict fat content.
+This is why NIR spectrometry data is almost always analyzed in
+derivative form in chemometrics.
+:::
+
+
+
+---
+
+## Functional ANOVA (FANOVA)
+
+> Does the mean function differ across groups?
+
+::: {.columns}
+::: {.column width="50%"}
+
+::: {style="font-size: 76%;"}
+
+**Classical ANOVA** tests whether group means differ in $\mathbb{R}$:
+
+$$H_0: \mu_1 = \mu_2 = \ldots = \mu_G$$
+
+**Functional ANOVA** extends this to function spaces:
+
+$$H_0: \mu_1(t) = \mu_2(t) = \ldots = \mu_G(t) \quad \forall t \in T$$
+
+The null hypothesis is now that **entire curves** are equal — not just scalar means.
+
+<br>
+
+**Test statistics** are typically based on:
+
+$$F(t) = \frac{\text{Between-group variance at } t}{\text{Within-group variance at } t}$$
+
+$F(t)$ is itself a **function** — it tells you at which time points the groups differ most. **Inference** can be done via **permutation tests** — reshuffle group labels, recompute $F(t)$, build a null distribution for $\|F\|$ or $\max_t F(t)$.
+
+:::
+
+:::
+
+::: {.column width="50%"}
+
+```{r fig-fanova}
+#| fig-height: 9.5
+
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+boys  <- growth$hgtm
+
+bs_basis <- create.bspline.basis(rangeval = range(ages),
+                                  nbasis = 15, norder = 4)
+bs_fdpar <- fdPar(bs_basis, Lfdobj = 2, lambda = 1e-1)
+girls_fd <- smooth.basis(ages, girls, bs_fdpar)$fd
+boys_fd  <- smooth.basis(ages, boys,  bs_fdpar)$fd
+
+mu_girls <- eval.fd(ages, mean.fd(girls_fd))
+mu_boys  <- eval.fd(ages, mean.fd(boys_fd))
+
+# Pointwise F-statistic (simplified)
+var_girls <- apply(eval.fd(ages, girls_fd), 1, var)
+var_boys  <- apply(eval.fd(ages, boys_fd),  1, var)
+n_g <- ncol(girls); n_b <- ncol(boys)
+
+grand_mean <- (rowMeans(girls) * n_g + rowMeans(boys) * n_b) / (n_g + n_b)
+SS_between <- n_g * (mu_girls - grand_mean)^2 + n_b * (mu_boys - grand_mean)^2
+SS_within  <- (n_g - 1) * var_girls + (n_b - 1) * var_boys
+F_t        <- (SS_between / 1) / (SS_within / (n_g + n_b - 2))
+
+df_means <- bind_rows(
+  tibble(age = ages, mu = as.numeric(mu_girls), group = "Girls (n=54)"),
+  tibble(age = ages, mu = as.numeric(mu_boys),  group = "Boys (n=39)")
+)
+
+p1 <- ggplot(df_means, aes(age, mu, color = group)) +
+  geom_line(linewidth = 1.5) +
+  scale_color_manual(values = c("#e63946", "#1e3a5f"), name = NULL) +
+  labs(title = expression("Group mean functions" ~ mu[g](t)),
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+p2 <- ggplot(tibble(age = ages, F = as.numeric(F_t)), aes(age, F)) +
+  geom_area(fill = "#e63946", alpha = 0.3) +
+  geom_line(color = "#e63946", linewidth = 1.3) +
+  geom_hline(yintercept = qf(0.95, 1, n_g + n_b - 2),
+             linetype = "dashed", color = "grey40") +
+  annotate("text", x = 17, y = qf(0.95, 1, n_g + n_b - 2) + 5,
+           label = "Critical value (95%)", color = "grey40", size = 5) +
+  labs(title = "Pointwise F-statistic F(t)",
+       subtitle = "Where do girls and boys differ most?",
+       x = "Age (years)", y = "F(t)") +
+  theme_fda()
+
+p1 / p2 + plot_layout(heights = c(1, 1))
+```
+
+:::
+:::
+
+::: {.notes}
+FANOVA is the direct extension of ANOVA to functional data. The key
+conceptual shift is that the null hypothesis is now a statement about
+entire functions, not scalars.
+
+The pointwise F-statistic F(t) is intuitive: at each age t, it measures
+how much the group means differ relative to within-group variability.
+High F(t) at age 13-15 tells you that boys and girls diverge most
+during adolescence — which is exactly what the biology predicts.
+
+Inference via permutation is the standard approach because the
+distribution of functional test statistics is complex. You shuffle
+the group labels many times, recompute the test statistic each time,
+and use the empirical distribution as your null.
+
+Key references: Ramsay & Silverman (2005)
+
+If asked about multiple comparisons: the permutation test on a global
+statistic (like the L2 norm of F(t)) naturally controls the familywise
+error rate across the entire domain. Cuevas, Febrero & Fraiman
+(2004), Computational Statistics & Data Analysis.
+
+:::
+
+---
+
+## Functional Regression
+
+> How does a functional predictor relate to an outcome?
+
+::: {.columns}
+::: {.column width="45%"}
+
+::: {style="font-size: 82%;"}
+
+Three main paradigms depending on the nature of predictor and response:
+
+<br>
+
+**Scalar-on-Function (SoF)**
+
+$$Y_i = \alpha +  \langle x_i, \beta \rangle_{L^2} +\varepsilon_i = \alpha  + \int_T x_i(t)\,\beta(t)\,dt + \varepsilon_i$$
+
+ The **coefficient function** $\beta(t)$ tells you which parts of the curve $x_i(t)$ matter most for predicting $Y_i$.
+
+*Example: predict fat content (%) from NIR absorbance curve.*
+
+
+:::
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-regression-2}
+#| fig-height: 7.5
+
+library(fda)
+library(fda.usc)
+library(tidyverse)
+library(patchwork)
+
+# ── DATA ─────────────────────────────────────────────────────────────────────
+data("tecator")
+wavelengths <- seq(850, 1050, length.out = 100)
+absorp      <- tecator$absorp$data   # 215 x 100
+fat         <- tecator$y[, 1]        # % fat
+
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+boys  <- growth$hgtm
+
+# ── 1. SCALAR-ON-FUNCTION ─────────────────────────────────────────────────────
+# Predict fat (scalar) from absorbance curve (function)
+# via FPCA + linear regression on scores
+
+bs_tec <- create.bspline.basis(rangeval = range(wavelengths),
+                                nbasis = 25, norder = 4)
+fdpar_tec <- fdPar(bs_tec, Lfdobj = 2, lambda = 1e-3)
+absorp_fd <- smooth.basis(wavelengths, t(absorp), fdpar_tec)$fd
+
+fpca_tec  <- pca.fd(absorp_fd, nharm = 6)
+scores_tec <- fpca_tec$scores
+
+lm_sof    <- lm(fat ~ scores_tec)
+fitted_sof <- fitted(lm_sof)
+
+# Reconstruct beta(t) = sum_k beta_k * phi_k(t)
+beta_coef <- coef(lm_sof)[-1]   # drop intercept
+efuns_tec <- eval.fd(wavelengths, fpca_tec$harmonics)
+beta_t    <- as.numeric(efuns_tec %*% beta_coef)
+
+p_sof <- ggplot(tibble(wavelength = wavelengths, beta = beta_t),
+                aes(wavelength, beta)) +
+  geom_area(fill = "#e63946", alpha = 0.2) +
+  geom_line(color = "#e63946", linewidth = 1.3) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey50", linewidth = 0.4) +
+  labs(
+    title    = "Scalar-on-Function",
+    subtitle = expression(Y[i] == alpha + integral(x[i](t)*beta(t)*dt) + epsilon[i]),
+    x = "Wavelength (nm)",
+    y = expression(hat(beta)(t))
+  ) +
+  annotate("text", x = 975, y = max(beta_t) * 0.8,
+           label = "Predict fat %\nfrom absorbance curve",
+           size = 5, color = "#e63946", fontface = "italic") +
+  theme_fda()
+p_sof
+```
+
+:::
+:::
+
+---
+
+## Functional Regression
+
+> How does a functional predictor relate to an outcome?
+
+::: {.columns}
+::: {.column width="45%"}
+
+::: {style="font-size: 82%;"}
+
+Three main paradigms depending on the nature of predictor and response:
+
+<br>
+
+**Function-on-Scalar (FoS)**
+
+$$y_i(t) = \beta_0(t) + x_{i}\,\beta_1(t) + \varepsilon_i(t)$$
+
+Response is a function, predictors are scalars. Each scalar predictor has a **functional coefficient** $\beta_j(t)$.
+
+*Example: how does sex affect the entire growth curve?*
+
+:::
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-regression-3}
+#| fig-height: 7.5
+
+library(fda)
+library(fda.usc)
+library(tidyverse)
+library(patchwork)
+
+# ── DATA ─────────────────────────────────────────────────────────────────────
+data("tecator")
+wavelengths <- seq(850, 1050, length.out = 100)
+absorp      <- tecator$absorp$data   # 215 x 100
+fat         <- tecator$y[, 1]        # % fat
+
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+boys  <- growth$hgtm
+
+# ── 1. SCALAR-ON-FUNCTION ─────────────────────────────────────────────────────
+# Predict fat (scalar) from absorbance curve (function)
+# via FPCA + linear regression on scores
+
+bs_tec <- create.bspline.basis(rangeval = range(wavelengths),
+                                nbasis = 25, norder = 4)
+fdpar_tec <- fdPar(bs_tec, Lfdobj = 2, lambda = 1e-3)
+absorp_fd <- smooth.basis(wavelengths, t(absorp), fdpar_tec)$fd
+
+fpca_tec  <- pca.fd(absorp_fd, nharm = 6)
+scores_tec <- fpca_tec$scores
+
+lm_sof    <- lm(fat ~ scores_tec)
+fitted_sof <- fitted(lm_sof)
+
+# Reconstruct beta(t) = sum_k beta_k * phi_k(t)
+beta_coef <- coef(lm_sof)[-1]   # drop intercept
+efuns_tec <- eval.fd(wavelengths, fpca_tec$harmonics)
+beta_t    <- as.numeric(efuns_tec %*% beta_coef)
+
+p_sof <- ggplot(tibble(wavelength = wavelengths, beta = beta_t),
+                aes(wavelength, beta)) +
+  geom_area(fill = "#e63946", alpha = 0.2) +
+  geom_line(color = "#e63946", linewidth = 1.3) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey50", linewidth = 0.4) +
+  labs(
+    title    = "Scalar-on-Function",
+    subtitle = expression(Y[i] == alpha + integral(x[i](t)*beta(t)*dt) + epsilon[i]),
+    x = "Wavelength (nm)",
+    y = expression(hat(beta)(t))
+  ) +
+  annotate("text", x = 950, y = max(beta_t) * 0.8,
+           label = "Predict fat %\nfrom absorbance curve",
+           size = 3.5, color = "#e63946", fontface = "italic") +
+  theme_fda()
+
+# ── 2. FUNCTION-ON-SCALAR ─────────────────────────────────────────────────────
+# Predict growth curve (function) from sex (scalar)
+# beta_sex(t) = mean_boys(t) - mean_girls(t)
+
+all_curves <- cbind(girls, boys)
+sex_dummy  <- c(rep(0, 54), rep(1, 39))   # 0 = female, 1 = male
+
+bs_gr <- create.bspline.basis(rangeval = range(ages),
+                               nbasis = 15, norder = 4)
+fdpar_gr <- fdPar(bs_gr, Lfdobj = 2, lambda = 1e-1)
+all_fd   <- smooth.basis(ages, all_curves, fdpar_gr)$fd
+
+# Pointwise regression: x_i(t) = beta0(t) + beta1(t)*sex_i
+mu_girls_t <- rowMeans(girls)
+mu_boys_t  <- rowMeans(boys)
+beta0_t    <- mu_girls_t                    # intercept = female mean
+beta1_t    <- mu_boys_t - mu_girls_t       # sex effect = difference in means
+
+df_fos <- bind_rows(
+  tibble(age = ages, y = beta0_t,         label = "beta[0](t): female mean"),
+  tibble(age = ages, y = beta0_t + beta1_t, label = "beta[0](t) + beta[1](t): male mean"),
+  tibble(age = ages, y = beta1_t,          label = "beta[1](t): sex effect")
+)
+
+p_fos <- ggplot(df_fos |> filter(label != "beta[1](t): sex effect"),
+                aes(age, y, color = label)) +
+  geom_line(linewidth = 1.3) +
+  geom_ribbon(
+    data = tibble(age = ages,
+                  ymin = mu_girls_t,
+                  ymax = mu_boys_t),
+    aes(age, ymin = ymin, ymax = ymax),
+    inherit.aes = FALSE,
+    fill = "#2a9d8f", alpha = 0.2
+  ) +
+  scale_color_manual(
+    values = c("beta[0](t): female mean"             = "#e63946",
+               "beta[0](t) + beta[1](t): male mean"  = "#1e3a5f"),
+    labels = c(expression(beta[0](t)*": female mean"),
+               expression(beta[0](t)+beta[1](t)*": male mean")),
+    name = NULL
+  ) +
+  labs(
+    title    = "Function-on-Scalar",
+    subtitle = expression(x[i](t) == beta[0](t) + beta[1](t)*sex[i] + epsilon[i](t)),
+    x = "Age (years)", y = "Height (cm)"
+  ) +
+  annotate("text", x = 14, y = 140,
+           label = expression(beta[1](t)*": sex effect"),
+           color = "#2a9d8f", size = 5.5, fontface = "italic") +
+  theme_fda() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 9))
+
+# ── 3. FUNCTION-ON-FUNCTION ───────────────────────────────────────────────────
+# Illustrate conceptually: beta(s,t) surface
+# Reference: Garcia-Portugues, Alvarez-Liebana et al. (2021) SJOS
+
+s_grid <- seq(0, 1, length.out = 60)
+t_grid <- seq(0, 1, length.out = 60)
+
+beta_surf <- outer(s_grid, t_grid, function(s, t) {
+  1.5 * exp(-3 * (s - 0.3)^2) * exp(-3 * (t - 0.4)^2) -
+    exp(-3 * (s - 0.7)^2) * exp(-3 * (t - 0.7)^2)
+})
+
+surf_df <- expand.grid(s = s_grid, t = t_grid) |>
+  mutate(beta = as.vector(beta_surf))
+
+p_fof <- ggplot(surf_df, aes(s, t, fill = beta)) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_gradient2(
+    low = "#2a9d8f", mid = "white", high = "#e63946",
+    midpoint = 0, name = expression(beta(s,t))
+  ) +
+  coord_equal() +
+  labs(
+    title    = "Function-on-Function",
+    subtitle = expression(y[i](t) == integral(x[i](s)*beta(s,t)*ds) + epsilon[i](t)),
+    x = "Domain of predictor (s)",
+    y = "Domain of response (t)"
+  ) +
+  annotate("text", x = 0.5, y = 0.05,
+           label = "Garcia-Portugues, Alvarez-Liebana\net al. (2021) SJOS",
+           color = "grey30", size = 3, hjust = 0.5, fontface = "italic") +
+  theme_fda() +
+  theme(legend.position = "right",
+        legend.key.height = unit(0.8, "cm"))
+
+# ── COMBINE ───────────────────────────────────────────────────────────────────
+p_fos
+```
+
+:::
+:::
+
+---
+
+## Functional Regression
+
+> How does a functional predictor relate to an outcome?
+
+::: {.columns}
+::: {.column width="45%"}
+
+::: {style="font-size: 82%;"}
+
+Three main paradigms depending on the nature of predictor and response:
+
+<br>
+
+
+
+**Function-on-Function (FoF)**
+
+$$y_i(t) = \langle x_i, \beta(\cdot, t) \rangle_{L^2} =  \int_T x_i(s)\,\beta(s,t)\,ds + \varepsilon_i(t)$$
+
+Both response and predictor are functions. The coefficient is a **surface** $\beta(s,t)$.
+
+*Example: is there exists an increment in the global temperature respect to previous years?*
+
+
+:::
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-regression-fda}
+#| fig-height: 8
+
+library(goffda)
+library(fda)
+library(tidyverse)
+data("aemet_temp")
+
+with(aemet_temp, {
+  ind_pred <- which((1974 <= df$year) & (df$year <= 1993))
+  ind_resp <- which((1994 <= df$year) & (df$year <= 2013))
+  aemet_pred <<- list("df" = df[ind_pred, ], "temp" = temp[ind_pred])
+  aemet_resp <<- list("df" = df[ind_resp, ], "temp" = temp[ind_resp])
+})
+
+# ── Promediar por estacion dentro de cada periodo ────────────────────────────
+mean_aemet <- function(x) {
+  m <- tapply(
+    X     = 1:nrow(x$temp$data),
+    INDEX = x$df$ind,
+    FUN   = function(i) colMeans(x$temp$data[i, , drop = FALSE], na.rm = TRUE)
+  )
+  x$temp$data <- do.call(rbind, m)
+  return(x$temp)
+}
+
+X_fdata <- mean_aemet(aemet_pred)   # fdata: estaciones x 365
+Y_fdata <- mean_aemet(aemet_resp)
+
+X_mat   <- X_fdata$data
+Y_mat   <- Y_fdata$data
+t_dom   <- X_fdata$argvals
+
+# Suavizar con base de Fourier (proceso periódico anual)
+fou_basis <- create.fourier.basis(rangeval = range(t_dom), nbasis = 21)
+fdpar_fou <- fdPar(fou_basis, lambda = 1e-2)
+
+X_fd <- smooth.basis(t_dom, t(X_mat), fdpar_fou)$fd
+Y_fd <- smooth.basis(t_dom, t(Y_mat), fdpar_fou)$fd
+
+# FPCA del predictor
+fpca_x  <- pca.fd(X_fd, nharm = 12)
+scores_x <- fpca_x$scores         # n x K
+efuns_x  <- eval.fd(t_dom, fpca_x$harmonics)  # 365 x K
+
+# Regresion Y_fd ~ scores_x: para cada punto t del dominio de Y,
+# regresion lineal de y_i(t) sobre los scores de x_i
+Y_eval <- eval.fd(t_dom, Y_fd)    # 365 x n
+
+# beta(s, t) = sum_k beta_k(t) * phi_k(s)
+# Estimamos beta_k(t) para cada t por OLS
+beta_mat <- solve(t(scores_x) %*% scores_x,
+                  t(scores_x) %*% t(Y_eval))   # K x 365
+
+# Reconstruir beta(s,t) = efuns_x %*% beta_mat
+# efuns_x: 365 x K,  beta_mat: K x 365
+# resultado: 365 x 365 (s x t)
+beta_surf <- efuns_x %*% beta_mat
+
+# Grid de meses para los ejes (usar medias mensuales para visualizar)
+months_idx <- round(seq(1, 365, length.out = 13))
+month_labs <- c("Jan","Feb","Mar","Apr","May","Jun",
+                "Jul","Aug","Sep","Oct","Nov","Dec","Jan")
+
+# Subsamplear la superficie a grid mensual para la visualizacion
+s_idx <- round(seq(1, 365, length.out = 100))
+t_idx <- round(seq(1, 365, length.out = 100))
+
+surf_df <- expand.grid(
+  s_idx = s_idx,
+  t_idx = t_idx
+) |>
+  mutate(
+    s    = t_dom[s_idx],
+    t    = t_dom[t_idx],
+    beta = mapply(function(si, ti) beta_surf[si, ti], s_idx, t_idx)
+  )
+
+# Limites simetricos
+lim <- max(abs(quantile(surf_df$beta, c(0.02, 0.98))))
+
+ggplot(surf_df, aes(s, t, fill = beta)) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_gradient2(
+    low      = "#457b9d",
+    mid      = "white",
+    high     = "#e63946",
+    midpoint = 0,
+    limits   = c(-lim, lim),
+    name     = expression(hat(beta)(s,t))
+  ) +
+  scale_x_continuous(
+    breaks = months_idx[-13],
+    labels = month_labs[-13]
+  ) +
+  scale_y_continuous(
+    breaks = months_idx[-13],
+    labels = month_labs[-13]
+  ) +
+  geom_abline(slope = 1, intercept = 0,
+              color = "black", linewidth = 0.6) +
+  geom_abline(slope = 1, intercept =  60,
+              color = "black", linewidth = 0.4, linetype = "dashed") +
+  geom_abline(slope = 1, intercept = -60,
+              color = "black", linewidth = 0.4, linetype = "dashed") +
+  coord_equal() +
+  labs(
+    title    = "Function-on-Function: FPCR estimator",
+    subtitle = expression(
+      hat(beta)(s,t)*": AEMET temperature 1974-1993 "%->%"1994-2013"
+    ),
+    x = "Temperature in 1974-1993 (s)",
+    y = "Temperature in 1994-2013 (t)",
+    caption  = "Garcia-Portugues, Alvarez-Liebana et al. (2021). Scand. J. Stat., 48(2):502-528"
+  ) +
+  theme_fda() +
+  theme(legend.position = "right")
+```
+
+:::
+:::
+
+::: {.notes}
+Functional regression is one of the most practically useful tools in FDA
+for health sciences. The three paradigms cover most real applications.
+
+The coefficient function beta(t) in scalar-on-function regression has a
+direct interpretation: wavelengths where beta(t) is large and positive
+are wavelengths where high absorbance predicts high fat content. This is
+directly interpretable in terms of the underlying chemistry (C-H bond
+vibrations at specific wavelengths).
+
+In the Tecator example, beta(t) is estimated via penalized regression
+in a functional basis — implemented in the refund package via pfr().
+The penalty controls smoothness of beta(t) exactly as in basis
+smoothing.
+
+Key packages: refund (Goldsmith et al.) for scalar-on-function and
+function-on-scalar; FoFR for function-on-function.
+
+Key references: Ramsay & Silverman (2005) Ch. 15; Goldsmith et al.
+(2011), Biometrics; Reiss & Ogden (2007), JASA.
+
+If asked about variable selection: there are functional LASSO extensions
+that produce sparse beta(t) — equal to zero over entire intervals where
+the predictor is irrelevant.
+:::
+
+---
+
+## Functional Time Series
+
+> What if the functions themselves are time correlated?
+
+::: {.columns}
+::: {.column width="50%"}
+
+::: {style="font-size: 70%;"}
+
+A **functional time series** is a sequence of functions:
+
+$$x_1(t), x_2(t), \ldots, x_n(t)$$
+
+where the **index** $i$ represents time (day, year, patient visit...) and each $x_i(t)$ is a curve over an intra-period domain $t$.
+
+**Examples in health sciences:**
+
+- Daily activity profiles observed over weeks: $x_{\text{day}}(\text{hour})$
+- Yearly mortality curves by age: $x_{\text{year}}(\text{age})$
+- Weekly EEG recordings: $x_{\text{week}}(\text{frequency})$
+
+::: {.fragment}
+
+**Key concepts:**
+
+- **Functional autocorrelation**: $\text{Cov}(x_i(s), x_{i+h}(t))\quad$ — how does today's curve predict tomorrow's?
+- **Forecasting**: predict $x_{n+1}(t)$ given $x_1(t), \ldots, x_n(t)$ — a whole curve forecast instead of scalar values.
+
+:::
+
+:::
+
+:::
+
+::: {.column width="50%"}
+
+```{r fig-fts}
+#| fig-height: 9
+
+set.seed(7)
+n_days   <- 60
+hours    <- seq(0, 24, length.out = 100)
+
+# Simulate daily activity profiles with weekly seasonality + trend
+sim_day <- function(day) {
+  weekly_effect <- 0.3 * sin(2 * pi * day / 7)
+  trend_effect  <- 0.005 * day
+  base <- (1.5 + weekly_effect + trend_effect) *
+          dnorm(hours, mean = 9 + rnorm(1, 0, 0.5), sd = 2) * 80 +
+          dnorm(hours, mean = 17 + rnorm(1, 0, 0.5), sd = 1.5) * 50 +
+          rnorm(length(hours), 0, 1)
+  pmax(base, 0)
+}
+
+activity_mat <- sapply(1:n_days, sim_day)
+
+# Show first 20 days colored by day index
+sel_days <- c(1, 10, 20, 30, 40, 50, 60)
+act_df <- map_dfr(sel_days, function(d) {
+  tibble(hour = hours, activity = activity_mat[, d], day = d)
+})
+
+p1 <- ggplot(act_df, aes(hour, activity, color = day, group = day)) +
+  geom_line(linewidth = 1) +
+  scale_color_viridis_c(name = "Day", option = "magma") +
+  labs(title    = "Daily activity profiles over 60 days",
+       subtitle = "Each curve = one day. Color = time ordering.",
+       x = "Hour of day", y = "Activity") +
+  theme_fda() +
+  theme(legend.position = "right",
+        legend.key.height = unit(0.8, "cm"))
+
+# FPCA on the functional time series + scores as time series
+bs_fts <- create.bspline.basis(rangeval = range(hours), nbasis = 15, norder = 4)
+fdpar_fts <- fdPar(bs_fts, Lfdobj = 2, lambda = 1e-2)
+act_fd   <- smooth.basis(hours, activity_mat, fdpar_fts)$fd
+fpca_fts <- pca.fd(act_fd, nharm = 2)
+
+scores_ts <- tibble(
+  day    = 1:n_days,
+  score1 = fpca_fts$scores[, 1],
+  score2 = fpca_fts$scores[, 2]
+)
+
+p2 <- ggplot(scores_ts, aes(day, score1)) +
+  geom_line(color = "#2a9d8f", linewidth = 1.2) +
+  geom_smooth(method = "loess", se = FALSE,
+              color = "#e63946", linewidth = 1, linetype = "dashed") +
+  labs(title    = "PC1 score over time",
+       subtitle = "Functional time series reduces to scalar time series on scores",
+       x = "Day", y = "Score 1") +
+  theme_fda()
+
+# p1 / p2 + plot_layout(heights = c(1.2, 1))
+p1
+```
+
+:::
+:::
+
+::: {.notes}
+Functional time series is a growing area at the intersection of FDA
+and time series analysis. The key insight is that many health data
+sources are naturally organized as sequences of curves — not just
+one functional observation per subject, but a sequence of functional
+observations where the ordering matters.
+
+The FPCA + scalar time series approach is the most practical entry
+point: decompose each daily curve into K scores, then apply standard
+ARIMA, VAR, or state-space models to the score sequences. Forecasting
+a future curve means forecasting future scores and reconstructing.
+
+More advanced approaches model the functional autocorrelation directly
+without going through FPCA first — see Bosq (2000) for the theoretical
+foundations and Hyndman & Shang (2009) for a practical forecasting
+approach used in mortality rate forecasting.
+
+Key reference: Bosq (2000), Linear Processes in Function Spaces;
+Hyndman & Shang (2009), Journal of Computational and Graphical Statistics.
+Package: ftsa in R.
+
+If asked about COVID mortality data: daily age-specific mortality curves
+by country form a functional time series — each day is a curve over age.
+FDA revealed that different countries followed different functional
+trajectories, not just different levels.
+:::
+
+---
+
+## Functional Time Series
+
+::: {.columns}
+::: {.column width="45%"}
+
+::: {style="font-size: 85%;"}
+
+The simplest and most studied model for functional time series
+is the **Autoregressive Hilbertian process of order 1 — ARH(1)**:
+
+$$X_n(t) = \Psi(X_{n-1})(t) + \varepsilon_n(t)$$
+
+::: {.fragment}
+
+- $\Psi$ is a **linear operator** — the functional
+analogue of the AR(1) coefficient $\phi$, such that $\Psi(X_{n-1})(t) = \int_T \psi(s,t)\, X_{n-1}(s)\, ds$
+- $\varepsilon_n(t)$ is a functional white noise — i.i.d. curves
+with $\mathbb{E}[\varepsilon_n(t)] = 0\quad$ and $\text{Cov}(\varepsilon_n(s), \varepsilon_n(t)) = C_\varepsilon(s,t)$
+
+:::
+
+::: {.fragment}
+
+
+**Stationarity condition:** $\|\Psi\|_{L^2} < 1$ — the operator
+norm of $\Psi$ must be less than 1, analogous to $|\phi| < 1$ in scalar AR(1).
+
+:::
+
+:::
+
+:::
+
+::: {.column width="55%"}
+
+```{r fig-arh1}
+#| fig-height: 9
+
+library(fda)
+library(tidyverse)
+library(patchwork)
+
+set.seed(42)
+
+# ── Simular un proceso ARH(1) ─────────────────────────────────────────────────
+# Dominio
+t_grid <- seq(0, 1, length.out = 100)
+n_obs  <- 80   # numero de curvas en la serie temporal
+
+# Operador Psi representado por su kernel psi(s,t)
+# Usamos un kernel suave y de norma < 1
+psi_kernel <- function(s, t) {
+  0.6 * exp(-3 * (s - t)^2)   # gaussiano: operacion local en tiempo
+}
+Psi_mat <- outer(t_grid, t_grid, psi_kernel) / length(t_grid)
+
+# Innovaciones: curvas gaussianas suaves
+sim_innovation <- function() {
+  coefs <- rnorm(8, 0, 0.5)
+  basis <- create.bspline.basis(rangeval = c(0,1), nbasis = 8, norder = 4)
+  as.numeric(eval.fd(t_grid, fd(matrix(coefs), basis)))
+}
+
+# Simular ARH(1): X_n = Psi(X_{n-1}) + eps_n
+X_mat <- matrix(0, nrow = length(t_grid), ncol = n_obs)
+X_mat[, 1] <- sim_innovation()
+for (i in 2:n_obs) {
+  X_mat[, i] <- Psi_mat %*% X_mat[, i-1] + sim_innovation()
+}
+
+# ── Panel 1: la serie temporal funcional ──────────────────────────────────────
+sel <- c(1, 10, 20, 30, 40, 50, 60, 70, 80)
+ts_df <- map_dfr(sel, function(i) {
+  tibble(t = t_grid, x = X_mat[, i], n = i)
+})
+
+p1 <- ggplot(ts_df, aes(t, x, color = n, group = n)) +
+  geom_line(linewidth = 0.9) +
+  scale_color_viridis_c(option = "magma", name = "n") +
+  labs(
+    title    = "ARH(1) — functional time series",
+    subtitle = expression(X[n](t) == Psi(X[n-1])(t) + epsilon[n](t)),
+    x = "t", y = expression(X[n](t))
+  ) +
+  theme_fda() +
+  theme(legend.position = "right",
+        legend.key.height = unit(0.6, "cm"))
+
+# ── Panel 2: el kernel Psi(s,t) ───────────────────────────────────────────────
+kern_df <- expand.grid(s = t_grid, t = t_grid) |>
+  mutate(psi = as.vector(outer(t_grid, t_grid, psi_kernel)))
+
+p2 <- ggplot(kern_df, aes(s, t, fill = psi)) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_gradient2(
+    low = "#457b9d", mid = "white", high = "#e63946",
+    midpoint = 0, name = expression(psi(s,t))
+  ) +
+  coord_equal() +
+  labs(
+    title    = "Autocorrelation kernel",
+    subtitle = expression(Psi(X[n-1])(t) == integral(psi(s,t)*X[n-1](s)*ds)),
+    x = "s  (previous curve)", y = "t  (next curve)"
+  ) +
+  theme_fda() +
+  theme(legend.position = "right",
+        legend.key.height = unit(0.8, "cm"))
+
+# ── Panel 3: scores como serie temporal escalar ───────────────────────────────
+bs_arh <- create.bspline.basis(rangeval = c(0,1), nbasis = 12, norder = 4)
+fdpar_arh <- fdPar(bs_arh, Lfdobj = 2, lambda = 1e-2)
+X_fd   <- smooth.basis(t_grid, X_mat, fdpar_arh)$fd
+fpca_arh <- pca.fd(X_fd, nharm = 3)
+pve_arh  <- round(fpca_arh$varprop * 100, 1)
+
+scores_arh <- as.data.frame(fpca_arh$scores[, 1:2]) |>
+  setNames(c("PC1", "PC2")) |>
+  mutate(n = 1:n_obs)
+
+p3 <- ggplot(scores_arh, aes(n, PC1)) +
+  geom_line(color = "#2a9d8f", linewidth = 1) +
+  geom_smooth(method = "loess", se = FALSE,
+              color = "#e63946", linewidth = 0.8,
+              linetype = "dashed") +
+  labs(
+    title    = "PC1 score as scalar time series",
+    subtitle = paste0("PC1 explains ", pve_arh[1],
+                      "% of variance — models as AR(1)"),
+    x = "n (time index)", y = expression(xi[n*","*1])
+  ) +
+  theme_fda()
+
+# ── Autocorrelacion de los scores ─────────────────────────────────────────────
+acf_vals <- acf(scores_arh$PC1, plot = FALSE, lag.max = 15)
+acf_df   <- tibble(
+  lag = acf_vals$lag[-1],
+  acf = acf_vals$acf[-1]
+)
+ci <- qnorm(0.975) / sqrt(n_obs)
+
+p4 <- ggplot(acf_df, aes(lag, acf)) +
+  geom_col(fill = "#1e3a5f", alpha = 0.8, width = 0.6) +
+  geom_hline(yintercept = c(ci, -ci),
+             linetype = "dashed", color = "#e63946", linewidth = 0.6) +
+  geom_hline(yintercept = 0, linewidth = 0.4, color = "grey40") +
+  labs(
+    title    = "ACF of PC1 scores",
+    subtitle = "Significant lag-1 autocorrelation confirms ARH(1) structure",
+    x = "Lag", y = "ACF"
+  ) +
+  scale_x_continuous(breaks = 1:15) +
+  theme_fda()
+
+# ── Combinar ──────────────────────────────────────────────────────────────────
+(p1 | p2) / (p3 | p4) +
+  plot_annotation(
+    title = "Autoregressive Hilbertian process of order 1 — ARH(1)",
+    theme = theme_fda()
+  )
+```
+
+:::
+:::
+
+---
+
+## Functional Depth Measures
+
+> Which curves are central (median)? Which are outliers?
+
+::: {.columns}
+::: {.column width="48%"}
+
+::: {style="font-size: 74%;"}
+
+In $\mathbb{R}$, ordering observations is trivial. In **function spaces**, there is no natural ordering. But we can define **depth** — a measure of how **central** a curve is relative to the sample.
+
+
+::: {.fragment}
+
+A curve is deep if it is **surrounded by many other curves**. An outlier is a curve that lies in the periphery.
+
+:::
+
+::: {.fragment}
+
+* **Fraiman-Muniz (FM) depth** — at each $t$, we measure how central $x_i(t)$ is relative to other curves, and then average.
+
+:::
+
+::: {.fragment}
+
+* **Modified Band Depth (MBD)** *(Lopez-Pintado & Romo, 2009)*: a curve is deep if it spends most of its time inside the band formed by other curves (by any pair $(x_j, x_k)$)
+
+$$D_{MBD}(x_i) = \binom{n}{2}^{-1}\sum_{j<k} \lambda\bigl(\{t: \min(x_j,x_k) \leq x_i \leq \max(x_j,x_k)\}\bigr)$$
+
+:::
+
+:::
+
+:::
+
+::: {.column width="52%"}
+
+```{r fig-depth}
+#| fig-height: 8
+
+library(fda.usc)
+
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+
+# Compute MBD depth
+fdata_girls <- fdata(t(girls), argvals = ages)
+depth_mbd   <- depth.mode(fdata_girls)$dep
+
+# Rank by depth
+depth_df <- tibble(
+  subject = 1:54,
+  depth   = depth_mbd
+) |> arrange(desc(depth))
+
+# Assign layers: median (top 1), central 50%, outer, outliers
+girls_df <- as.data.frame(t(girls)) |>
+  setNames(paste0("age_", round(ages, 1))) |>
+  mutate(
+    subject = 1:54,
+    depth   = depth_mbd,
+    layer   = case_when(
+      rank(-depth) == 1        ~ "Functional median",
+      rank(-depth) <= 27       ~ "Central 50%",
+      depth > quantile(depth_mbd, 0.1) ~ "Outer",
+      TRUE                     ~ "Outlier"
+    )
+  ) |>
+  pivot_longer(starts_with("age_"),
+               names_to = "age_str", values_to = "height") |>
+  mutate(age = as.numeric(str_remove(age_str, "age_")))
+
+ggplot(girls_df |> filter(layer != "Functional median"),
+       aes(age, height, group = subject, color = layer, alpha = layer)) +
+  geom_line(linewidth = 0.7) +
+  geom_line(data = girls_df |> filter(layer == "Functional median"),
+            aes(age, height, group = subject),
+            color = "#0f1f3d", linewidth = 2.2, alpha = 1) +
+  scale_color_manual(
+    values = c("Central 50%" = "#2a9d8f",
+               "Outer"       = "#e9c46a",
+               "Outlier"     = "#e63946"),
+    name = NULL
+  ) +
+  scale_alpha_manual(
+    values = c("Central 50%" = 0.5,
+               "Outer"       = 0.4,
+               "Outlier"     = 0.9),
+    guide = "none"
+  ) +
+  annotate("text", x = 17, y = 148,
+           label = "Functional\nmedian", color = "#0f1f3d",
+           fontface = "bold", size = 3.5) +
+  labs(title    = "Functional depth — Berkeley Growth Study",
+       subtitle = "Modified Band Depth (Lopez-Pintado & Romo, 2009)",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+```
+
+:::
+:::
+
+::: {.notes}
+Functional depth is one of the most elegant ideas in FDA. It solves a
+fundamental problem: in R you can always rank observations (smallest to
+largest) and define medians and quantiles. In function spaces, there is
+no natural ordering — a curve cannot be "smaller" or "larger" than another
+in any obvious sense.
+
+Depth provides a center-outward ordering. The deepest curve is the
+functional median — the most central observation. Curves with low depth
+are outliers — they lie far from the bulk of the data.
+
+Modified Band Depth (MBD) has a beautiful geometric interpretation: it
+measures the proportion of time that a curve lies within the band formed
+by any pair of other curves. If x_i always lies between other curves, it
+has high depth. If it often lies outside, it has low depth.
+
+The functional boxplot (Sun & Genton 2011) uses MBD depth to construct
+the functional analogue of a box plot: the central region (deepest 50%),
+the functional median, whiskers, and outlier flags. It is implemented in
+the R package rainbow and fda.usc.
+
+
+**Applications:**
+- **Functional median**: deepest curve
+- **Functional boxplot** *(Sun & Genton, 2011)*
+- **Outlier detection**: curves with depth below a threshold
+
+
+Key references: Lopez-Pintado & Romo (2009), JASA; Sun & Genton (2011),
+Journal of Computational and Graphical Statistics.
+
+If asked about robustness: depth-based methods are naturally robust
+to outliers because the median is not sensitive to extreme values.
+
+
+:::
+
+
+---
+
+## Functional Depth for biomedical Data
+
+> Which parts of the domain drive the difference between two groups?
+
+::: {.columns}
+::: {.column width="48%"}
+
+::: {style="font-size: 70%;"}
+
+**López-Pintado & Kun (2021). *Statistics in Medicine*, 40(7), 1639–1652.**
+
+Standard functional tests (FANOVA, permutation) give a **global p-value** — they tell you *whether* two groups differ, but not *where* in the domain the difference lies.
+
+**The depth-based global envelope test:**
+
+1. Rank all curves by **Modified Band Depth** within each group
+2. Compute the pointwise difference between group **functional medians**
+3. Build a **simultaneous confidence envelope** under $H_0$ via permutation of depth ranks
+4. The envelope identifies **exactly which portions** of the domain drive the rejection
+
+
+
+:::
+
+:::
+
+::: {.column width="52%"}
+
+```{r fig-envelope-test}
+#| fig-height: 8
+
+set.seed(42)
+library(fda)
+library(fda.usc)
+library(tidyverse)
+library(patchwork)
+
+# ── Simulate two groups of growth curves ─────────────────────────────────────
+# Normal birth weight vs low birth weight (inspired by paper application)
+ages_env <- seq(0, 18, length.out = 50)
+n1 <- 30   # normal birth weight
+n2 <- 25   # low birth weight
+
+sim_growth <- function(n, offset_early, offset_late, sd_noise = 3) {
+  sapply(1:n, function(i) {
+    base  <- 50 + rnorm(1, 0, 2)
+    early <- offset_early + rnorm(1, 0, 1)
+    late  <- offset_late  + rnorm(1, 0, 1)
+    base +
+      early * (1 - exp(-0.3 * ages_env)) * 30 +
+      late  * pnorm(ages_env, 13, 2) * 20 +
+      rnorm(length(ages_env), 0, sd_noise)
+  })
+}
+
+g1 <- sim_growth(n1, offset_early = 1.0, offset_late = 1.0)  # normal
+g2 <- sim_growth(n2, offset_early = 0.7, offset_late = 0.8)  # low BW
+
+# MBD depth within each group
+fd1 <- fdata(t(g1), argvals = ages_env)
+fd2 <- fdata(t(g2), argvals = ages_env)
+
+dep1 <- depth.mode(fd1)$dep
+dep2 <- depth.mode(fd2)$dep
+
+# Functional medians (deepest curve)
+med1 <- g1[, which.max(dep1)]
+med2 <- g2[, which.max(dep2)]
+
+# Permutation envelope under H0
+B <- 499
+all_curves <- cbind(g1, g2)
+n_all <- ncol(all_curves)
+obs_diff <- med1 - med2
+
+perm_diffs <- replicate(B, {
+  perm  <- sample(n_all)
+  pg1   <- all_curves[, perm[1:n1]]
+  pg2   <- all_curves[, perm[(n1+1):n_all]]
+  fd_p1 <- fdata(t(pg1), argvals = ages_env)
+  fd_p2 <- fdata(t(pg2), argvals = ages_env)
+  dp1   <- depth.mode(fd_p1)$dep
+  dp2   <- depth.mode(fd_p2)$dep
+  pg1[, which.max(dp1)] - pg2[, which.max(dp2)]
+})
+
+# 95% simultaneous envelope
+env_lower <- apply(perm_diffs, 1, quantile, 0.025)
+env_upper <- apply(perm_diffs, 1, quantile, 0.975)
+
+# Identify significant regions
+sig_region <- obs_diff < env_lower | obs_diff > env_upper
+
+env_df <- tibble(
+  age      = ages_env,
+  diff     = obs_diff,
+  lower    = env_lower,
+  upper    = env_upper,
+  sig      = sig_region
+)
+
+# ── Panel 1: raw curves ───────────────────────────────────────────────────────
+raw_df <- bind_rows(
+  as.data.frame(g1) |>
+    setNames(paste0("s", 1:n1)) |>
+    mutate(age = ages_env) |>
+    pivot_longer(-age, names_to = "id", values_to = "height") |>
+    mutate(group = "Normal birth weight"),
+  as.data.frame(g2) |>
+    setNames(paste0("s", 1:n2)) |>
+    mutate(age = ages_env) |>
+    pivot_longer(-age, names_to = "id", values_to = "height") |>
+    mutate(group = "Low birth weight")
+)
+
+p1 <- ggplot(raw_df, aes(age, height, group = id, color = group)) +
+  geom_line(alpha = 0.2, linewidth = 0.5) +
+  geom_line(data = tibble(age = ages_env, height = med1),
+            aes(age, height), color = "#2a9d8f",
+            linewidth = 1.8, inherit.aes = FALSE) +
+  geom_line(data = tibble(age = ages_env, height = med2),
+            aes(age, height), color = "#e63946",
+            linewidth = 1.8, inherit.aes = FALSE) +
+  scale_color_manual(values = c("Normal birth weight" = "#2a9d8f",
+                                 "Low birth weight"    = "#e63946"),
+                     name = NULL) +
+  labs(title    = "Growth curves by birth weight",
+       subtitle = "Bold = functional median (deepest curve by MBD)",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+# ── Panel 2: envelope test ────────────────────────────────────────────────────
+p2 <- ggplot(env_df, aes(age, diff)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              fill = "grey80", alpha = 0.6) +
+  geom_line(linewidth = 1.3, color = "#1e3a5f") +
+  geom_point(data = env_df |> filter(sig),
+             aes(age, diff), color = "#e63946", size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey40", linewidth = 0.5) +
+  annotate("text", x = 15, y = max(env_df$upper) * 0.85,
+           label = "95% envelope\nunder H\u2080",
+           color = "grey50", size = 3.5, hjust = 0.5) +
+  annotate("text", x = 3, y = min(env_df$diff) * 0.8,
+           label = "Significant\nregion",
+           color = "#e63946", size = 3.5, fontface = "bold") +
+  labs(
+    title    = "Depth-based envelope test",
+    subtitle = "Difference of functional medians — red = outside envelope",
+    x = "Age (years)",
+    y = expression(hat(m)[1](t) - hat(m)[2](t))
+  ) +
+  theme_fda()
+
+p1 | p2
+```
+
+:::
+:::
+
+::: {.notes}
+Lopez-Pintado & Kun (2021) Statistics in Medicine. Key advantage over global tests: the envelope tells you WHERE the difference lies, not just whether it exists. In the birth weight application, the envelope reveals that low birth weight children diverge from normal birth weight children most strongly during early childhood and again around puberty — not uniformly across the growth trajectory. In the PET imaging application, the envelope localizes which brain regions have significantly different receptor binding potential between depressed patients and healthy controls. Note: Sara Lopez-Pintado is Associate Professor of Health Sciences at Northeastern University — same institution as this visiting position.
+
+**Two biomedical applications**
+
+- **Birth weight:** do normal and low birth weight children have different **growth trajectory shapes**? The envelope reveals the specific ages where curves diverge.
+
+- **Brain PET imaging:** do severe depression patients and healthy controls differ in **receptor binding potential**? The envelope localises the brain regions responsible.
+:::
+
+---
+
+## Functional Clustering/Classification
+
+> Can we group curves by their shape?
+
+::: {.columns}
+::: {.column width="48%"}
+
+::: {style="font-size: 75%;"}
+
+**Goal:** identify subjects with similar functional profiles.
+
+::: {.fragment}
+
+**Main approaches:**
+
+**1. FPCA + standard clustering**
+Reduce each curve to $K$ scores $(\xi_{i1}, \ldots, \xi_{iK})$, then apply $k$-means, hierarchical clustering, or GMM in $\mathbb{R}^K$.
+
+:::
+
+::: {.fragment}
+
+**2. Model-based functional clustering**
+Assume each cluster $g$ has its own mean function $\mu_g(t)$ and covariance structure. Fit via EM algorithm.
+
+:::
+
+::: {.fragment}
+
+**3. $k$-means on functions**
+Minimize total within-cluster $L^2$ distance $\min \sum_{g=1}^G \sum_{i:~z_i=g} \|x_i - \mu_g\|_{L^2}^2$
+
+:::
+
+::: {.fragment}
+
+**Classification** follows the same logic — once curves are represented as score vectors or basis coefficients, standard classifiers (LDA, SVM, random forests) apply directly in score space.
+
+:::
+
+:::
+
+:::
+
+::: {.column width="52%"}
+
+```{r fig-clustering}
+#| fig-height: 8
+
+data("growth")
+ages  <- growth$age
+girls <- growth$hgtf
+boys  <- growth$hgtm
+
+# Smooth all curves
+all_curves <- cbind(girls, boys)
+n_all      <- ncol(all_curves)
+true_sex   <- c(rep("Female", 54), rep("Male", 39))
+
+bs_all  <- create.bspline.basis(rangeval = range(ages), nbasis = 15, norder = 4)
+fdpar_all <- fdPar(bs_all, Lfdobj = 2, lambda = 1e-1)
+all_fd    <- smooth.basis(ages, all_curves, fdpar_all)$fd
+
+# FPCA
+fpca_all <- pca.fd(all_fd, nharm = 3)
+scores_all <- as.data.frame(fpca_all$scores[, 1:3]) |>
+  setNames(paste0("PC", 1:3)) |>
+  mutate(sex = true_sex,
+         subject = 1:n_all)
+
+# k-means with k=2 on first 2 PCs
+set.seed(42)
+km_res <- kmeans(scores_all[, c("PC1", "PC2")], centers = 2, nstart = 20)
+scores_all$cluster <- factor(km_res$cluster)
+
+# Agreement with true sex
+tab <- table(scores_all$cluster, scores_all$sex)
+accuracy <- max(sum(diag(tab)), sum(tab) - sum(diag(tab))) / sum(tab)
+
+p1 <- ggplot(scores_all, aes(PC1, PC2, color = sex, shape = cluster)) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  scale_color_manual(values = c("#e63946", "#1e3a5f"), name = "True sex") +
+  scale_shape_manual(values = c(16, 17), name = "k-means cluster") +
+  labs(title    = "FPCA scores: k-means clustering (k=2)",
+       subtitle = paste0("Accuracy vs true sex: ", round(accuracy * 100, 1), "%"),
+       x = paste0("PC1 (", round(fpca_all$varprop[1]*100, 1), "%)"),
+       y = paste0("PC2 (", round(fpca_all$varprop[2]*100, 1), "%)")) +
+  theme_fda() +
+  theme(legend.position = "bottom",
+        legend.box = "vertical")
+
+# Mean curves per cluster
+cluster_means <- map_dfr(1:2, function(g) {
+  idx <- which(km_res$cluster == g)
+  tibble(age   = ages,
+         mu    = rowMeans(all_curves[, idx]),
+         cluster = paste0("Cluster ", g))
+})
+
+p2 <- ggplot(cluster_means, aes(age, mu, color = cluster)) +
+  geom_line(linewidth = 1.5) +
+  scale_color_manual(values = c("#e63946", "#1e3a5f"), name = NULL) +
+  labs(title    = "Cluster mean functions",
+       subtitle = "k-means recovers sex structure from curve shape alone",
+       x = "Age (years)", y = "Height (cm)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+p1 | p2
+```
+
+:::
+:::
+
+::: {.notes}
+Functional clustering is one of the most immediately useful tools for
+clinical researchers: it asks "are there subtypes in this population,
+defined by the shape of their trajectories?"
+
+The FPCA + k-means approach is by far the most common in practice
+because it is simple, fast, and produces interpretable results.
+The score plot gives you a visual representation of the cluster
+structure, and the cluster mean functions give you a direct
+interpretation of what each cluster looks like in the original
+functional space.
+
+The example here uses the Berkeley Growth Study: without knowing
+sex labels, k-means on the first two FPCA scores recovers the
+sex structure with high accuracy. This demonstrates that the shape
+of growth curves alone contains enough information to distinguish
+males from females — and that FPCA successfully extracts this
+information.
+
+For classification (supervised), the scores feed directly into LDA,
+SVM, or random forests. The functional structure is captured by FPCA;
+the classification is then a standard multivariate problem.
+
+Key references: James & Sugar (2003), JASA; Giacofci et al. (2013),
+Biometrics; Jacques & Preda (2014), Statistics and Computing.
+
+The canonical classification example in Ramsay & Silverman is exactly the Tecator spectrometry dataset — classifying meat samples as high vs low fat content from their NIR absorbance curves. It is the go-to example because it demonstrates that classifying directly in the functional space outperforms classifying from scalar summaries.
+The classic R&S pipeline is:
+- Smooth the absorbance curves
+- compute the second derivative 
+- Run FPCA on the second derivatives
+- Classify with LDA in the score space
+
+Note on alignment: before clustering, if curves have phase variation
+(e.g., the pubertal growth spurt occurs at different ages in different
+children), registration/alignment should be applied first. Clustering
+unregistered curves conflates amplitude variation with phase variation
+and can produce spurious clusters.
+:::
+
+---
+
+## Continuous Glucose Monitoring (CGM)
+
+> The shape of your glucose curve matters more than your average.
+
+::: {.columns}
+::: {.column width="48%"}
+
+::: {style="font-size: 78%;"}
+
+**Setting:** CGM devices record glucose every 5 minutes — 288 observations per day per patient. Standard summaries: HbA1c, mean glucose, time-in-range.
+
+**What FDA adds:**
+
+- The **daily glucose profile** $x_i(t)$ is the unit of observation — a curve over 24 hours
+- **FPCA** reveals phenotypes: flat controllers vs reactive spikers vs nocturnal hypoglycaemics
+- **Functional regression**: predict HbA1c or cardiovascular risk from the entire profile, not just mean glucose
+- **Functional clustering**: identify patient subtypes with similar glucose dynamics for personalised treatment
+
+**Key reference**: Matabuena et al. (2022). *Glucodensities: a new representation of glucose profiles using distributional data analysis.* Statistical Methods in Medical Research.
+
+:::
+
+:::
+
+::: {.column width="52%"}
+
+```{r fig-cgm}
+#| fig-height: 8
+
+set.seed(123)
+hours   <- seq(0, 24, length.out = 288)
+n_pat   <- 60
+
+# Simulate 3 CGM phenotypes
+sim_cgm <- function(i) {
+  type <- sample(c("flat", "spiker", "nocturnal"), 1,
+                 prob = c(0.4, 0.4, 0.2))
+  base <- 100 + rnorm(1, 0, 10)
+  if (type == "flat") {
+    base + 10*sin(2*pi*hours/24) + rnorm(288, 0, 5)
+  } else if (type == "spiker") {
+    base +
+      40*dnorm(hours, 8,  0.8)*15 +
+      50*dnorm(hours, 13, 0.8)*15 +
+      35*dnorm(hours, 19, 0.8)*15 +
+      rnorm(288, 0, 8)
+  } else {
+    base - 25*dnorm(hours, 3, 1.5)*8 +
+      15*sin(2*pi*hours/24) + rnorm(288, 0, 6)
+  }
+}
+
+cgm_mat <- sapply(1:n_pat, sim_cgm)
+
+# Smooth
+bs_cgm  <- fda::create.bspline.basis(rangeval = c(0,24), nbasis = 25, norder = 4)
+fdp_cgm <- fda::fdPar(bs_cgm, Lfdobj = 2, lambda = 1e-1)
+cgm_fd  <- fda::smooth.basis(hours, cgm_mat, fdp_cgm)$fd
+
+# FPCA
+fpca_cgm <- fda::pca.fd(cgm_fd, nharm = 3)
+pve_cgm  <- round(fpca_cgm$varprop * 100, 1)
+
+mu_cgm  <- as.numeric(fda::eval.fd(hours, fda::mean.fd(cgm_fd)))
+efuns_c <- fda::eval.fd(hours, fpca_cgm$harmonics)
+
+# Select 3 contrasting subjects
+scores_c <- fpca_cgm$scores
+idx1 <- which.max(scores_c[, 1])
+idx2 <- which.min(scores_c[, 1])
+idx3 <- which.max(scores_c[, 2])
+
+sel_df <- map_dfr(list(
+  list(idx = idx1, lab = "High PC1"),
+  list(idx = idx2, lab = "Low PC1"),
+  list(idx = idx3, lab = "High PC2")
+), function(x) {
+  tibble(hour = hours,
+         glucose = cgm_mat[, x$idx],
+         phenotype = x$lab)
+})
+
+ggplot(
+  as.data.frame(cgm_mat[, sample(1:n_pat, 25)]) |>
+    setNames(paste0("p", 1:25)) |>
+    mutate(hour = hours) |>
+    pivot_longer(-hour, names_to = "id", values_to = "glucose"),
+  aes(hour, glucose, group = id)
+) +
+  geom_line(alpha = 0.15, color = "#1e3a5f", linewidth = 0.5) +
+  geom_line(data = sel_df,
+            aes(hour, glucose, color = phenotype, group = phenotype),
+            linewidth = 1.4) +
+  geom_line(data = tibble(hour = hours, glucose = mu_cgm),
+            aes(hour, glucose), color = "#0f1f3d",
+            linewidth = 1.8, linetype = "dashed",
+            inherit.aes = FALSE) +
+  scale_color_manual(
+    values = c("High PC1" = "#e63946",
+               "Low PC1"  = "#2a9d8f",
+               "High PC2" = "#e9c46a"),
+    name = "Phenotype"
+  ) +
+  geom_hline(yintercept = c(70, 180), linetype = "dotted",
+             color = "grey50", linewidth = 0.5) +
+  annotate("text", x = 23, y = 72,  label = "Hypo threshold (70)",
+           size = 3, color = "grey40", hjust = 1) +
+  annotate("text", x = 23, y = 182, label = "Hyper threshold (180)",
+           size = 3, color = "grey40", hjust = 1) +
+  labs(title    = "CGM daily glucose profiles",
+       subtitle = paste0("60 simulated patients — dashed = mean curve — FPCA PC1: ",
+                         pve_cgm[1], "%, PC2: ", pve_cgm[2], "%"),
+       x = "Hour of day", y = "Glucose (mg/dL)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+```
+
+:::
+:::
+
+::: {.notes}
+CGM is one of the most exciting applications of FDA in clinical biostatistics. The device generates a genuine functional observation — 288 glucose values per day — and the clinical question is inherently about the shape of the curve, not just its mean. Standard summaries like HbA1c or time-in-range discard phenotypic information that FDA can recover. Matabuena et al. (2022) proposed glucodensities as a distributional representation of CGM data, which is a related functional approach.
+:::
+
+---
+
+## EEG Spectral Curves in Epilepsy
+
+> The frequency profile of a brain signal is a functional observation.
+
+::: {.columns}
+::: {.column width="48%"}
+
+::: {style="font-size: 78%;"}
+
+**Setting:** EEG recordings decomposed into **power spectral density** curves — power as a function of frequency (0-50 Hz). One curve per epoch per patient.
+
+**Standard approach:** summarize to band power (delta, theta, alpha, beta, gamma) — 5 scalar values per epoch.
+
+**What FDA adds:**
+
+- The **full spectral curve** $x_i(\omega)$ preserves shape information within and between bands
+- **FPCA** on spectral curves identifies modes of spectral variation linked to seizure onset, sleep stages, or drug response
+- **Functional classification**: distinguish pre-ictal from inter-ictal periods directly from the spectral curve shape
+- **Scalar-on-function regression**: predict seizure probability from the entire spectral profile
+
+**Key reference:**: Ombao et al. (2001). *SLEX Analysis of Multivariate Nonstationary Time Series.* JASA.
+
+:::
+
+:::
+
+::: {.column width="52%"}
+
+```{r fig-eeg-spectra}
+#| fig-height: 5.5
+
+set.seed(77)
+freqs   <- seq(1, 50, length.out = 200)
+n_eeg   <- 50
+
+# Simulate spectral curves: interictal vs preictal
+sim_spectrum <- function(state) {
+  base  <- 20 * exp(-0.08 * freqs)
+  alpha <- if (state == "interictal")
+             15 * dnorm(freqs, 10, 1.5) * 10
+           else
+             8  * dnorm(freqs, 10, 1.5) * 10
+  theta <- if (state == "preictal")
+             12 * dnorm(freqs, 6, 1.2) * 10
+           else
+             5  * dnorm(freqs, 6, 1.2) * 10
+  gamma <- if (state == "preictal")
+             6  * dnorm(freqs, 40, 3) * 10
+           else
+             2  * dnorm(freqs, 40, 3) * 10
+  pmax(base + alpha + theta + gamma + rnorm(200, 0, 1), 0)
+}
+
+n_ii <- 30; n_pi <- 20
+spec_mat <- cbind(
+  sapply(1:n_ii, function(i) sim_spectrum("interictal")),
+  sapply(1:n_pi, function(i) sim_spectrum("preictal"))
+)
+labels_eeg <- c(rep("Inter-ictal", n_ii), rep("Pre-ictal", n_pi))
+
+mu_ii <- rowMeans(spec_mat[, 1:n_ii])
+mu_pi <- rowMeans(spec_mat[, (n_ii+1):(n_ii+n_pi)])
+
+# Band boundaries
+bands <- tibble(
+  xmin  = c(1, 4, 8, 13, 30),
+  xmax  = c(4, 8, 13, 30, 50),
+  label = c("δ", "θ", "α", "β", "γ"),
+  fill  = c("#e9c46a","#f4a261","#e76f51","#2a9d8f","#457b9d")
+)
+
+eeg_df <- as.data.frame(spec_mat[, c(1:5, (n_ii+1):(n_ii+5))]) |>
+  setNames(c(paste0("ii_", 1:5), paste0("pi_", 1:5))) |>
+  mutate(freq = freqs) |>
+  pivot_longer(-freq, names_to = "id", values_to = "power") |>
+  mutate(state = ifelse(startsWith(id, "ii"), "Inter-ictal", "Pre-ictal"))
+
+ggplot() +
+  geom_rect(data = bands,
+            aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf, fill = label),
+            alpha = 0.08, inherit.aes = FALSE) +
+  scale_fill_manual(values = setNames(bands$fill, bands$label),
+                    name = "Band") +
+  geom_line(data = eeg_df,
+            aes(freq, power, group = id, color = state),
+            alpha = 0.3, linewidth = 0.5) +
+  geom_line(data = tibble(freq = freqs, power = mu_ii, state = "Inter-ictal"),
+            aes(freq, power, color = state), linewidth = 1.8) +
+  geom_line(data = tibble(freq = freqs, power = mu_pi, state = "Pre-ictal"),
+            aes(freq, power, color = state), linewidth = 1.8) +
+  scale_color_manual(values = c("Inter-ictal" = "#2a9d8f",
+                                 "Pre-ictal"   = "#e63946"),
+                     name = "State") +
+  labs(title    = "EEG power spectral density curves",
+       subtitle = "Pre-ictal vs inter-ictal — mean curves in bold",
+       x = "Frequency (Hz)", y = "Power (μV²/Hz)") +
+  theme_fda() +
+  theme(legend.position = "bottom",
+        legend.box = "vertical")
+```
+
+:::
+:::
+
+::: {.notes}
+EEG spectra are natural functional observations — power as a function of frequency. The standard approach of summarizing to 5 band-power values loses information about the shape within and between bands. FDA treats the entire spectral curve as one observation. This is particularly powerful for seizure prediction: pre-ictal spectral curves have a distinctive shape (elevated theta, suppressed alpha, elevated gamma) that is visible in the mean curve difference but also in FPCA modes of variation.
+:::
+
+---
+
+## Survival Analysis with Functional Predictors
+
+> Can the shape of a longitudinal biomarker predict time to event?
+
+::: {.columns}
+::: {.column width="50%"}
+
+::: {style="font-size: 77%;"}
+
+**Setting:** patients followed until death or censoring. For each patient, a longitudinal biomarker curve $x_i(t)$ is observed (PSA, creatinine, CD4...).
+
+**Standard approach:** include the last observed value, the slope, or the AUC as a scalar covariate in a Cox model.
+
+**FDA approach — functional Cox model:**
+
+$$\lambda_i(s) = \lambda_0(s) \exp\left(\int_T x_i(t)\,\beta(t)\,dt\right)$$
+
+The log-hazard ratio is a **scalar-on-function regression** on the entire biomarker trajectory. The coefficient function $\beta(t)$ tells you **which parts of the trajectory** are most prognostic.
+
+**Key advantage:** $\beta(t)$ may reveal that the trajectory shape over a specific time window — not the overall level — is the clinically relevant predictor.
+
+**Reference:** Gellar et al. (2015). *Cox regression models with functional covariates for survival data.* Statistical Modelling.
+
+:::
+
+:::
+
+::: {.column width="50%"}
+
+```{r fig-survival-fda}
+#| fig-height: 9
+
+library(survival)
+library(fda)
+library(tidyverse)
+library(patchwork)
+
+# ── PBC longitudinal data ─────────────────────────────────────────────────────
+# pbcseq: repeated bilirubin measurements per patient
+# pbc:    survival outcome (time, status)
+data("pbcseq", package = "survival")
+data("pbc",    package = "survival")
+
+# Patients with at least 6 measurements and known outcome
+pbc_surv <- pbc |>
+  filter(!is.na(status)) |>
+  mutate(dead = as.integer(status == 2)) |>
+  select(id, time, dead)
+
+# Keep patients with >= 6 longitudinal bilirubin measurements
+ids_ok <- pbcseq |>
+  group_by(id) |>
+  summarise(n = n()) |>
+  filter(n >= 6) |>
+  pull(id)
+
+pbcseq_filt <- pbcseq |>
+  filter(id %in% ids_ok) |>
+  inner_join(pbc_surv, by = "id") |>
+  filter(day <= time)   # only measurements before event
+
+# Interpolate each patient's bilirubin onto a common grid (0-3000 days)
+t_common <- seq(0, 3000, length.out = 60)
+n_pat    <- length(unique(pbcseq_filt$id))
+ids_use  <- unique(pbcseq_filt$id)
+
+bili_mat <- matrix(NA, nrow = 60, ncol = length(ids_use))
+surv_vec <- numeric(length(ids_use))
+dead_vec <- integer(length(ids_use))
+
+for (k in seq_along(ids_use)) {
+  pid   <- ids_use[k]
+  df_k  <- pbcseq_filt |> filter(id == pid) |> arrange(day)
+  # interpolate log-bilirubin onto common grid
+  approx_k <- approx(df_k$day, log(df_k$bili + 1),
+                     xout = t_common, rule = 2)$y
+  bili_mat[, k] <- approx_k
+  surv_vec[k]   <- pbc_surv$time[pbc_surv$id == pid]
+  dead_vec[k]   <- pbc_surv$dead[pbc_surv$id == pid]
+}
+
+# Smooth each patient's trajectory
+bs_pbc  <- create.bspline.basis(rangeval = range(t_common),
+                                 nbasis = 15, norder = 4)
+fdp_pbc <- fdPar(bs_pbc, Lfdobj = 2, lambda = 1e0)
+bili_fd <- smooth.basis(t_common, bili_mat, fdp_pbc)$fd
+
+# FPCA
+fpca_pbc <- pca.fd(bili_fd, nharm = 4)
+pve_pbc  <- round(fpca_pbc$varprop * 100, 1)
+
+mu_bili  <- as.numeric(eval.fd(t_common, mean.fd(bili_fd)))
+
+# ── Panel 1: bilirubin trajectories by outcome ────────────────────────────────
+# Select 8 dead and 8 alive patients
+idx_dead  <- which(dead_vec == 1)[1:8]
+idx_alive <- which(dead_vec == 0)[1:8]
+idx_sel   <- c(idx_dead, idx_alive)
+
+traj_df <- map_dfr(idx_sel, function(k) {
+  tibble(
+    day     = t_common,
+    logbili = bili_mat[, k],
+    id      = k,
+    outcome = ifelse(dead_vec[k] == 1, "Dead", "Alive/censored")
+  )
+})
+
+p1 <- ggplot(traj_df, aes(day, logbili, group = id, color = outcome)) +
+  geom_line(alpha = 0.55, linewidth = 0.8) +
+  scale_color_manual(values = c("Dead"             = "#e63946",
+                                 "Alive/censored"   = "#2a9d8f"),
+                     name = NULL) +
+  geom_line(data = tibble(day = t_common, logbili = mu_bili),
+            aes(day, logbili), inherit.aes = FALSE,
+            color = "#0f1f3d", linewidth = 1.6, linetype = "dashed") +
+  annotate("text", x = 2800, y = 0.6,
+           label = "μ(t)", color = "#0f1f3d",
+           fontface = "bold", size = 4) +
+  labs(title    = "Log-bilirubin trajectories — PBC study",
+       subtitle = "Red = died, Green = alive/censored. Dashed = mean curve.",
+       x = "Days since enrolment", y = "log(bilirubin + 1)") +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+# ── Panel 2: FPCA scree + PC1 scores vs survival ─────────────────────────────
+scores_pbc <- fpca_pbc$scores[, 1]
+
+surv_df <- tibble(
+  pc1     = scores_pbc,
+  surv    = surv_vec,
+  outcome = ifelse(dead_vec == 1, "Dead", "Alive/censored")
+)
+
+p2 <- ggplot(surv_df, aes(pc1, surv, color = outcome)) +
+  geom_point(alpha = 0.7, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1,
+              aes(group = 1), color = "#0f1f3d") +
+  scale_color_manual(values = c("Dead"           = "#e63946",
+                                 "Alive/censored" = "#2a9d8f"),
+                     name = NULL) +
+  labs(
+    title    = paste0("PC1 score (", pve_pbc[1], "% var) vs survival time"),
+    subtitle = "Higher PC1 = more elevated bilirubin trajectory = shorter survival",
+    x = "PC1 score", y = "Survival time (days)"
+  ) +
+  theme_fda() +
+  theme(legend.position = "bottom")
+
+p1 | p2
+```
+
+:::
+:::
+
+::: {.notes}
+
+Real data: survival::pbcseq from R — 312 PBC patients with repeated serum bilirubin measurements and survival outcome (death or liver transplant). Methodology: Gellar et al. (2015), Statistical Modelling — functional Cox model where the entire bilirubin trajectory is the predictor. Left panel: patients who died tend to have rising bilirubin trajectories; survivors stay low. Right panel: PC1 of the bilirubin functional data captures most variance and correlates negatively with survival time — patients with higher bilirubin profiles (high PC1) die sooner. The functional Cox model uses the whole trajectory beta(t), not just the last value or the slope — it reveals which time windows of bilirubin elevation are most prognostic.
+
+PBC = Primary Biliary Cholangitis — a chronic autoimmune liver disease where bile ducts are progressively destroyed. Bilirubin is the primary marker of liver function decline. This is a canonical dataset in survival analysis, also used in joint modelling literature.
+
+The functional Cox model is a powerful extension of survival analysis. Instead of reducing the biomarker trajectory to a scalar (last value, slope, AUC), the model uses the entire trajectory as a functional predictor. The coefficient function beta(t) reveals which time windows are most prognostic — for example, it may show that the rate of PSA change in the last 6 months before censoring is far more predictive of survival than the overall PSA level. This has direct clinical implications for monitoring frequency and timing.
+:::
+
+
+
+# R Ecosystem for FDA {background-color="#1e3a5f"}
+
+Key packages and resources
+
+---
+
+## R Packages for FDA
+
+::: {.columns}
+::: {.column width="50%"}
+
+### Core FDA
+
+**`fda`** *(Ramsay, Graves, Hooker)*  
+The foundational package. Basis systems, smoothing, FPCA, functional regression, registration.
+
+
+**`fda.usc`** *(Febrero-Bande & Oviedo de la Fuente)*  
+Functional statistics: depth measures, outlier detection, classification, regression.
+
+
+**`refund`** *(Goldsmith, Scheipl, Huang et al.)*  
+Regression with functional data: scalar-on-function, function-on-scalar, function-on-function via penalized splines.
+
+
+**`goffda`** *(García-Portugués, Álvarez-Liébana et al.)*  
+Goodness-of-Fit tests for Functional Data
+
+:::
+
+::: {.column width="50%"}
+
+### Extended Toolkit
+
+
+**`wavethresh`** *(Nason)*  
+Wavelet-based functional smoothing and decomposition.
+
+**`ftsa`** *(Hyndman & Shang)*  
+Functional time series — forecasting, decomposition.
+
+**`rainbow`** *(Hyndman & Shang)*  
+Functional data visualization and depth-based methods.
+
+**`tidyfun`** *(Scheipl, Goldsmith & Wrobel)*  
+Tidy Functional Data
+
+
+:::
+:::
+
+::: {.notes}
+The R ecosystem for FDA is mature and well-maintained. The fda package
+by Ramsay et al. is the foundational reference implementation —
+everything in the Ramsay & Silverman textbook is implemented there.
+
+refund is the most actively developed package for functional regression,
+with interfaces to mgcv for penalized splines and support for all three
+regression paradigms (SoF, FoS, FoF).
+
+fdapace is essential for sparse and irregular data — it implements the
+PACE methodology of Yao, Muller & Wang (2005) and handles the case
+where different subjects have different measurement times and numbers
+of observations.
+
+fda.usc is particularly strong for exploratory analysis: depth measures,
+functional boxplots, outlier detection, and nonparametric classification.
+
+For Python users, scikit-fda has been growing rapidly and now covers
+most of the basics — basis smoothing, FPCA, functional regression,
+depth measures — with a sklearn-compatible API.
+:::
+
+---
+
+## Key References
+
+::: {style="font-size: 78%;"}
+
+**Foundational textbooks**
+
+- Ramsay, J.O. & Silverman, B.W. (2005). *Functional Data Analysis* (2nd ed.). Springer. ← **Start here**
+- Ramsay, J.O., Hooker, G. & Graves, S. (2009). *Functional Data Analysis with R and MATLAB*. Springer.
+- Hsing, T. & Eubank, R. (2015). *Theoretical Foundations of Functional Data Analysis*. Wiley.
+- Kokoszka, P. & Reimherr, M. (2017). *Introduction to Functional Data Analysis*. CRC Press.
+
+**Key papers**
+
+- Ramsay, J.O. & Dalzell, C.J. (1991). Some tools for functional data analysis. *JRSS-B*, 53, 539-572. ← term coined here
+- Yao, F., Muller, H.G. & Wang, J.L. (2005). Functional data analysis for sparse longitudinal data. *JASA*, 100, 577-590. ← PACE
+- Lopez-Pintado, S. & Romo, J. (2009). On the concept of depth for functional data. *JASA*, 104, 718-734. ← depth
+- Leroux, A. et al. (2019). Organizing and analyzing the activity data in NHANES. *Statistics in Biosciences*, 11, 262-287.
+- Wang, J.L., Chiou, J.M. & Muller, H.G. (2016). Functional data analysis. *Annual Review of Statistics*, 3, 257-295. ← **best review paper**
+
+:::
+
+::: {.notes}
+If you give one reference to take away, it should be Wang, Chiou &
+Muller (2016) in Annual Review of Statistics — it is the most accessible
+and comprehensive review of the field, covering the main methodological
+directions with practical guidance.
+
+For textbooks, Ramsay & Silverman (2005) is the classic reference.
+Kokoszka & Reimherr (2017) is more theoretically oriented and is a
+good companion for those who want the mathematical foundations.
+
+For applications in health sciences specifically, the NHANES
+accelerometry papers (Leroux, Goldsmith et al.) provide excellent
+worked examples of FDA applied to real wearable sensor data.
+:::
+
+---
+
+## Thanks!
+
+::: {.r-fit-text}
+**Thank you**
+:::
+
+::: {style="color: black; font-size: 0.7em; margin-top: 0.75em;"}
+Javier Álvarez Liébana
+
+[javieralvarezliebana.es](https://javieralvarezliebana.es) · `r fontawesome::fa("github", fill = "white")` [dadosdelaplace](https://github.com/dadosdelaplace)
+:::
+
+::: {style="color: #aab0c6; font-size: 0.65em; margin-top: 1.5em;"}
+Slides built with [Quarto](https://quarto.org) in R
+
+*These slides were built using:* `fda` · `refund` · `fda.usc` · `fdapace` · `goffda` · `tidyfun` · `patchwork` · `tidyverse`
+:::

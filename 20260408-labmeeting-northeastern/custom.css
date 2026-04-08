@@ -1,0 +1,107 @@
+/* =============================================
+   FDA Presentation — custom.css
+   ============================================= */
+
+/* ── Typography ── */
+.reveal {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.reveal h1, .reveal h2 {
+  color: #1e3a5f;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.reveal h3 {
+  color: #2a5298;
+  font-weight: 600;
+  font-size: 1em;
+  margin-bottom: 0.3em;
+}
+
+/* ── Tables ── */
+.reveal table {
+  font-size: 0.82em;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.reveal table th {
+  background-color: #1e3a5f;
+  color: white;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.reveal table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.reveal table tr:nth-child(even) td {
+  background-color: #f4f7fc;
+}
+
+/* ── Callout boxes ── */
+.callout {
+  font-size: 0.85em;
+  border-radius: 6px;
+}
+
+.callout-note {
+  border-left: 4px solid #2a9d8f;
+}
+
+.callout-tip {
+  border-left: 4px solid #e9c46a;
+}
+
+.callout-warning {
+  border-left: 4px solid #e76f51;
+}
+
+.callout-important {
+  border-left: 4px solid #e63946;
+}
+
+/* ── Section title slides ── */
+.reveal section[data-background-color="#1e3a5f"] h1,
+.reveal section[data-background-color="#1e3a5f"] h2 {
+  color: white !important;
+}
+
+/* ── Columns ── */
+.reveal .columns {
+  gap: 1.5em;
+}
+
+/* ── Code blocks ── */
+.reveal pre {
+  font-size: 0.7em;
+  border-radius: 6px;
+}
+
+/* ── Equations ── */
+.reveal .math {
+  font-size: 0.95em;
+}
+
+/* ── Footer ── */
+.reveal .footer {
+  font-size: 0.65em;
+  color: #888;
+}
+
+/* ── Slide numbers ── */
+.reveal .slide-number {
+  font-size: 0.65em;
+  color: #aaa;
+}
+
+/* ── Incremental lists ── */
+.reveal ul li, .reveal ol li {
+  margin-bottom: 0.4em;
+  line-height: 1.45;
+}

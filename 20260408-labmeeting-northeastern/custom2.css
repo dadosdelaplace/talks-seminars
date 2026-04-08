@@ -1,0 +1,218 @@
+/* =============================================
+   FDA Presentation — custom.css
+   Space Grotesk style
+   ============================================= */
+
+/* ── Import Space Grotesk from Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+
+/* ── Base typography ── */
+.reveal,
+.reveal p,
+.reveal li,
+.reveal td,
+.reveal th {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ── Headings ── */
+.reveal h1 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 2.4em;
+  color: #0f1f3d;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+}
+
+.reveal h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 1.5em;
+  color: #0f1f3d;
+  letter-spacing: -0.025em;
+  border-bottom: 1.8px solid #F7B90C;
+  padding-bottom: 0.1em;
+  margin-bottom: 0.1em;
+}
+
+.reveal h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  color: #F7B90C;
+  text-transform: uppercase;
+  font-size: 0.7em;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.2em;
+}
+
+/* ── Body text ── */
+.reveal p, .reveal li {
+  font-size: 0.7em;
+  line-height: 1.6;
+  color: #1a1a2e;
+}
+
+.reveal ul li, .reveal ol li {
+  margin-bottom: 0.45em;
+}
+
+/* ── Strong / bold ── */
+.reveal strong {
+  font-weight: 700;
+  color: #0f1f3d;
+}
+
+/* ── Code — Space Mono for monospace ── */
+.reveal code,
+.reveal pre,
+.reveal pre code {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75em;
+  background-color: #f0f2f8;
+  border-radius: 5px;
+}
+
+.reveal pre {
+  border-left: 3px solid #e63946;
+  padding: 0.6em 0.8em;
+  box-shadow: none;
+}
+
+/* ── Tables ── */
+.reveal table {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6em;
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.reveal table th {
+  background-color: #0f1f3d;
+  color: white;
+  padding: 7px 12px;
+  text-align: left;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.85em;
+}
+
+.reveal table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #e0e4f0;
+  color: #1a1a2e;
+}
+
+.reveal table tr:nth-child(even) td {
+  background-color: #f5f7fd;
+}
+
+/* ── Callout boxes ── */
+.callout {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.82em;
+  border-radius: 4px;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.callout .callout-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.82em;
+}
+
+.callout-note {
+  border-left: 4px solid #2a9d8f;
+  background-color: #f0faf8;
+}
+
+.callout-tip {
+  border-left: 4px solid #f4a261;
+  background-color: #fff8f0;
+}
+
+.callout-warning {
+  border-left: 4px solid #e76f51;
+  background-color: #fff3f0;
+}
+
+.callout-important {
+  border-left: 4px solid #e63946;
+  background-color: #fff0f1;
+}
+
+
+/* ── Section title slides (dark bg) ── */
+.reveal section[data-background-color="#1e3a5f"] h1,
+.reveal section[data-background-color="#1e3a5f"] h2,
+.reveal section[data-background-color="#1e3a5f"] p {
+  color: white !important;
+  border-bottom: none;
+}
+
+/* ── Columns gap ── */
+.reveal .columns {
+  gap: 2em;
+}
+
+/* ── Math ── */
+.reveal .math {
+  font-size: 0.92em;
+}
+
+/* ── Footer ── */
+.reveal .footer {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6em;
+  color: #aab0c6;
+  letter-spacing: 0.03em;
+}
+
+/* ── Slide number ── */
+.reveal .slide-number {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6em;
+  color: #aab0c6;
+}
+
+/* ── Blockquote ── */
+.reveal blockquote {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 300;
+  font-style: italic;
+  border-left: 3px solid #e63946;
+  background: #f8f9fd;
+  padding: 0.02em 0.7tem;
+  margin: 0.45em 0;
+  color: #444;
+  border-radius: 0 4px 4px 0;
+  font-size: 0.75em;
+}
+
+
+
+/* ── R-fit-text ── */
+.r-fit-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: white;
+}
+
+/* ── Horizontal rule ── */
+.reveal hr {
+  border: none;
+  border-top: 1.5px solid #e0e4f0;
+  margin: 0.8em 0;
+}
+
+.reveal figure figcaption {
+  display: none;
+}
